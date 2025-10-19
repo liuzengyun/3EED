@@ -4,7 +4,7 @@
 # Licensed under the MIT License.
 # ------------------------------------------------------------------------
 
-""" Helper functions for calculating 2D and 3D bounding box IoU.
+"""Helper functions for calculating 2D and 3D bounding box IoU.
 
 Collected and written by Charles R. Qi
 Last modified: Jul 2019
@@ -13,10 +13,370 @@ from __future__ import print_function
 
 import numpy as np
 from scipy.spatial import ConvexHull
+import cv2
+
+
+def rotx(t):
+    """3D Rotation about the x-axis."""
+    c = np.cos(t)
+    s = np.sin(t)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def roty(t):
+    """Rotation about the y-axis."""
+    c = np.cos(t)
+    s = np.sin(t)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def rotz(t):
+    """Rotation about the z-axis."""
+    c = np.cos(t)
+    s = np.sin(t)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def draw_projected_box3d(image, qs, color=(0, 255, 0), thickness=5):
+    """Draw 3d bounding box in image
+    qs: (8,3) array of vertices for the 3d box in following order:
+        1 -------- 0
+       /|         /|
+      2 -------- 3 .
+      | |        | |
+      . 5 -------- 4
+      |/         |/
+      6 -------- 7
+    """
+    # 处理PIL图像输入
+    if hasattr(image, "convert"):  # 检查是否为PIL图像
+        # 转换为RGB模式并转为numpy数组
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        image = np.array(image)
+        # PIL图像是RGB格式，需要转换为BGR格式供OpenCV使用
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    qs = qs.astype(np.int32)
+    for k in range(0, 4):
+        # Ref: http://docs.enthought.com/mayavi/mayavi/auto/mlab_helper_functions.html
+        i, j = k, (k + 1) % 4
+        # use LINE_AA for opencv3
+        # cv2.line(image, (qs[i,0],qs[i,1]), (qs[j,0],qs[j,1]), color, thickness, cv2.CV_AA)
+        cv2.line(image, (qs[i, 0], qs[i, 1]), (qs[j, 0], qs[j, 1]), color, thickness)
+        i, j = k + 4, (k + 1) % 4 + 4
+        cv2.line(image, (qs[i, 0], qs[i, 1]), (qs[j, 0], qs[j, 1]), color, thickness)
+
+        i, j = k, k + 4
+        cv2.line(image, (qs[i, 0], qs[i, 1]), (qs[j, 0], qs[j, 1]), color, thickness)
+    return image
+
+
+def conver_box2d(boxes_3d, image_shape, item_info):
+    """
+    boxes_3d: (N, 7) or (7,) for single box
+    image_shape: (H, W)
+    item_info: dict
+
+    return:
+        corners_2d: (N, 8, 2)
+    """
+    # Handle single box input (1D array)
+    if boxes_3d.ndim == 1:
+        boxes_3d = boxes_3d[None, :]  # Add batch dimension
+
+    extristric = np.array(item_info["image_extrinsic"])
+    assert extristric.shape == (4, 4)
+    # try:
+    #     extristric = np.array(item_info["image_extrinsic"])
+    #     extristric = np.linalg.inv(extristric)
+    #     axis_tf = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
+    #     extristric = np.matmul(axis_tf, extristric)
+    # except:
+    #     extristric = np.array(item_info["extristric"])
+    K = np.array(item_info["image_intrinsic"])[:3, :3]
+    if "camera_distortion" in item_info:
+        D = np.array(item_info["camera_distortion"])
+    else:
+        # Use default distortion coefficients if not provided
+        D = np.zeros(([4]), dtype=np.float32)
+    num_box = boxes_3d.shape[0]
+    boxes_vec_points = np.zeros([num_box, 3, 9])
+    l, w, h = boxes_3d[:, 3], boxes_3d[:, 4], boxes_3d[:, 5]
+    c_xyz = boxes_3d[:, :3][:, :, None]
+
+    x_corners = [
+        l / 2,
+        l / 2,
+        -l / 2,
+        -l / 2,
+        l / 2,
+        l / 2,
+        -l / 2,
+        -l / 2,
+        np.zeros([num_box]),
+    ]
+    z_corners = [
+        h / 2,
+        h / 2,
+        h / 2,
+        h / 2,
+        -h / 2,
+        -h / 2,
+        -h / 2,
+        -h / 2,
+        np.zeros([num_box]),
+    ]
+    y_corners = [
+        w / 2,
+        -w / 2,
+        -w / 2,
+        w / 2,
+        w / 2,
+        -w / 2,
+        -w / 2,
+        w / 2,
+        np.zeros([num_box]),
+    ]
+
+    boxes_vec_points[:, 0, :] = np.transpose(np.stack(x_corners))
+    boxes_vec_points[:, 1, :] = np.transpose(np.stack(y_corners))
+    boxes_vec_points[:, 2, :] = np.transpose(np.stack(z_corners))
+
+    rotzs = []
+    for box in boxes_3d:
+        rotzs.append(rotz(box[6]))
+    rotzs = np.stack(rotzs)
+
+    corners_3d = rotzs @ boxes_vec_points  # N, 3, 9
+    corners_3d += c_xyz
+    corners_3d = np.transpose(corners_3d, (0, 2, 1)).reshape(-1, 3)
+    extend_points = cart_to_hom(corners_3d[:, :3])
+
+    points_cam = extend_points @ extristric.T
+    rvecs = np.zeros((3, 1))
+    tvecs = np.zeros((3, 1))
+    depth = points_cam[:, 2]
+
+    pts_img, _ = cv2.projectPoints(
+        points_cam[:, :3].astype(np.float32), rvecs, tvecs, K, D
+    )
+
+    corners_2d = pts_img[:, 0, :]
+    corners_2d = corners_2d.reshape(num_box, 9, 2)
+    depth = depth.reshape(num_box, 9)
+    centers_2d = corners_2d[:, -1, :]
+    centers_depth = depth[:, -1]
+
+    kept1 = (
+        (centers_2d[:, 1] >= 0)
+        & (centers_2d[:, 1] < image_shape[1])
+        & (centers_2d[:, 0] >= 0)
+        & (centers_2d[:, 0] < image_shape[0])
+        & (centers_depth > 0.1)
+    )
+
+    return corners_2d[:, :8, :], None
+
+
+def cart_to_hom(pts):
+    """
+    :param pts: (N, 3 or 2)
+    :return pts_hom: (N, 4 or 3)
+    """
+    pts_hom = np.hstack((pts, np.ones((pts.shape[0], 1), dtype=np.float32)))
+    return pts_hom
+
+
+def draw_points_on_image(
+    image,
+    points_2d,
+    color=(0, 255, 0),
+    radius=2,
+    save_path=None,
+    create_mask=False,
+    valid_mask=None,
+):
+    # 统一为 BGR np.uint8
+    if hasattr(image, "convert"):
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    result_image = image.copy()
+    H, W = result_image.shape[:2]
+
+    P = np.asarray(points_2d, dtype=np.float32)
+    if valid_mask is not None:
+        P = P[np.asarray(valid_mask, dtype=bool)]
+    if P.shape[0] == 0:
+        if create_mask:
+            mask = np.zeros((H, W), np.uint8)
+            return result_image, mask
+        return result_image
+
+    # 四舍五入 + 裁剪到图像边界
+    u = np.rint(P[:, 0]).astype(np.int32)
+    v = np.rint(P[:, 1]).astype(np.int32)
+    inb = (u >= 0) & (u < W) & (v >= 0) & (v < H)
+    u, v = u[inb], v[inb]
+
+    # 画点（可选）
+    for x, y in zip(u, v):
+        cv2.circle(result_image, (x, y), radius, color, -1)
+
+    if not create_mask:
+        # if save_path is not None:
+        # cv2.imwrite(save_path, result_image)
+        # print(f"    点云图像已保存: {save_path}")
+        return result_image
+
+    # 单通道 uint8 mask：先直接置点为255，再统一做形态学连接
+    mask = np.zeros((H, W), np.uint8)
+    mask[v, u] = 255
+
+    # 让稀疏的“多排点”连成片：根据点密度调 kernel/iterations
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # if save_path is not None:
+    # cv2.imwrite(save_path, result_image)
+    # print(f"    点云图像已保存: {save_path}")
+    return result_image, mask
+
+
+def extract_points_in_bbox_3d(lidar_points, bbox_3d):
+    """
+    从点云中提取3D边界框内的点
+
+    Args:
+        lidar_points: 点云数据 (N, 4) - [x, y, z, intensity]
+        bbox_3d: 3D边界框 [x, y, z, l, w, h, yaw] 或 [x, y, z, l, w, h, yaw, pitch, roll]
+        
+        7维bbox (waymo)：[x, y, z, l, w, h, yaw]
+        只有 yaw 一个旋转角度（绕z轴旋转）
+        9维bbox (quad, drone)：[x, y, z, l, w, h, yaw, pitch, roll]
+        有三个旋转角度：yaw（绕z轴）、pitch（绕y轴）、roll（绕x轴）
+
+    Returns:
+        np.ndarray: 边界框内的点云
+    """
+    # 处理不同长度的bbox_3d
+    if len(bbox_3d) == 7:
+        x, y, z, l, w, h, yaw = bbox_3d
+        pitch, roll = 0.0, 0.0  # 默认值
+    elif len(bbox_3d) == 9:
+        x, y, z, l, w, h, yaw, pitch, roll = bbox_3d
+    else:
+        raise ValueError(f"bbox_3d must have length 7 or 9, got {len(bbox_3d)}")
+
+    # 创建旋转矩阵
+    cos_yaw = np.cos(yaw)
+    sin_yaw = np.sin(yaw)
+    cos_pitch = np.cos(pitch)
+    sin_pitch = np.sin(pitch)
+    cos_roll = np.cos(roll)
+    sin_roll = np.sin(roll)
+
+    # 旋转矩阵 (简化版本，只考虑yaw)
+    R = np.array([[cos_yaw, -sin_yaw, 0], [sin_yaw, cos_yaw, 0], [0, 0, 1]])
+
+    # 将点云转换到边界框坐标系
+    points_centered = lidar_points[:, :3] - np.array([x, y, z])
+    points_rotated = (R.T @ points_centered.T).T
+
+    # 检查点是否在边界框内
+    half_l, half_w, half_h = l / 2, w / 2, h / 2
+    mask = (
+        (points_rotated[:, 0] >= -half_l)
+        & (points_rotated[:, 0] <= half_l)
+        & (points_rotated[:, 1] >= -half_w)
+        & (points_rotated[:, 1] <= half_w)
+        & (points_rotated[:, 2] >= -half_h)
+        & (points_rotated[:, 2] <= half_h)
+    )
+
+    return lidar_points[mask], mask
+
+
+def project_points_to_2d(points_3d, image_shape, item_info):
+    """
+    将3D点云投影到2D图像平面
+
+    Args:
+        points_3d: (N, 3) 3D点云坐标
+        image_shape: (H, W) 图像尺寸
+        item_info: dict 包含相机参数的信息字典
+
+    Returns:
+        points_2d: (N, 2) 投影后的2D坐标
+        depth: (N,) 深度值
+        valid_mask: (N,) 有效点掩码
+    """
+    # 获取相机外参
+    # try:
+    extrinsic = np.array(item_info["image_extrinsic"])
+    # extrinsic = np.linalg.inv(extrinsic)
+    # # 只在 shape 不是 4x4 时才应用 axis_tf
+    assert extrinsic.shape == (
+        4,
+        4,
+    ), f"extrinsic shape must be (4, 4), got {extrinsic.shape}"
+    #     axis_tf = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
+    #     extrinsic = np.matmul(axis_tf, extrinsic)
+    # except:
+    #     extrinsic = np.array(item_info["extristric"])
+
+    # 获取相机内参
+    K = np.array(item_info["image_intrinsic"])[:3, :3]
+
+    # 获取畸变参数
+    if "camera_distortion" in item_info:
+        D = np.array(item_info["camera_distortion"])
+    else:
+        # 如果没有提供畸变参数，使用默认值
+        D = np.zeros(4, dtype=np.float32)
+
+    # 将3D点转换为齐次坐标
+    points_hom = cart_to_hom(points_3d)
+
+    # 将点从世界坐标系转换到相机坐标系
+    points_cam = points_hom @ extrinsic.T
+
+    # 获取深度值
+    depth = points_cam[:, 2]
+
+    # 设置旋转和平移向量（这里使用零向量，因为变换已经包含在extrinsic中）
+    rvecs = np.zeros((3, 1))
+    tvecs = np.zeros((3, 1))
+
+    # 投影到图像平面
+    pts_img, _ = cv2.projectPoints(
+        points_cam[:, :3].astype(np.float32), rvecs, tvecs, K, D
+    )
+
+    # 提取2D坐标
+    points_2d = pts_img[:, 0, :]
+
+    # 创建有效点掩码；False 表示该点投影后是无效的（超出图像边界或深度不合理）
+    # 1. 图像边界检查：
+    # points_2d[:, 1] >= 0 和 points_2d[:, 1] < image_shape[0]：检查投影后的y坐标是否在图像高度范围内
+    # points_2d[:, 0] >= 0 和 points_2d[:, 0] < image_shape[1]：检查投影后的x坐标是否在图像宽度范围内
+    # 2. 深度合理性检查：
+    # depth > 0.1：确保点的深度值大于0.1米，过滤掉太近或无效的深度值
+    valid_mask = (
+        (points_2d[:, 1] >= 0)
+        & (points_2d[:, 1] < image_shape[0])
+        & (points_2d[:, 0] >= 0)
+        & (points_2d[:, 0] < image_shape[1])
+        & (depth > 0.1)
+    )
+
+    return points_2d, depth, valid_mask
 
 
 def polygon_clip(subjectPolygon, clipPolygon):
-    """ Clip a polygon with another polygon.
+    """Clip a polygon with another polygon.
 
     Ref: https://rosettacode.org/wiki/Sutherland-Hodgman_polygon_clipping#Python
 
@@ -62,18 +422,18 @@ def polygon_clip(subjectPolygon, clipPolygon):
         cp1 = cp2
         if len(outputList) == 0:
             return None
-    return (outputList)
+    return outputList
 
 
 def poly_area(x, y):
-    """ Ref: http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates """
+    """Ref: http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates"""
     return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 
 def convex_hull_intersection(p1, p2):
-    """ Compute area of two convex hull's intersection area.
-        p1,p2 are a list of (x,y) tuples of hull vertices.
-        return a list of (x,y) for the intersection and its volume
+    """Compute area of two convex hull's intersection area.
+    p1,p2 are a list of (x,y) tuples of hull vertices.
+    return a list of (x,y) for the intersection and its volume
     """
     inter_p = polygon_clip(p1, p2)
     if inter_p is not None:
@@ -84,7 +444,7 @@ def convex_hull_intersection(p1, p2):
 
 
 def box3d_vol(corners):
-    ''' corners: (8,3) no assumption on axis direction '''
+    """corners: (8,3) no assumption on axis direction"""
     a = np.sqrt(np.sum((corners[0, :] - corners[1, :]) ** 2))
     b = np.sqrt(np.sum((corners[1, :] - corners[2, :]) ** 2))
     c = np.sqrt(np.sum((corners[0, :] - corners[4, :]) ** 2))
@@ -98,7 +458,7 @@ def is_clockwise(p):
 
 
 def box3d_iou(corners1, corners2):
-    ''' Compute 3D bounding box IoU.
+    """Compute 3D bounding box IoU.
 
     Input:
         corners1: numpy array (8,3), assume up direction is negative Y
@@ -108,7 +468,7 @@ def box3d_iou(corners1, corners2):
         iou_2d: bird's eye view 2D bounding box IoU
 
     todo (rqi): add more description on corner points' orders.
-    '''
+    """
     # corner points are in counter clockwise order
     rect1 = [(corners1[i, 0], corners1[i, 2]) for i in range(3, -1, -1)]
     rect2 = [(corners2[i, 0], corners2[i, 2]) for i in range(3, -1, -1)]
@@ -145,16 +505,16 @@ def get_iou(bb1, bb2):
     float
         in [0, 1]
     """
-    assert bb1['x1'] < bb1['x2']
-    assert bb1['y1'] < bb1['y2']
-    assert bb2['x1'] < bb2['x2']
-    assert bb2['y1'] < bb2['y2']
+    assert bb1["x1"] < bb1["x2"]
+    assert bb1["y1"] < bb1["y2"]
+    assert bb2["x1"] < bb2["x2"]
+    assert bb2["y1"] < bb2["y2"]
 
     # determine the coordinates of the intersection rectangle
-    x_left = max(bb1['x1'], bb2['x1'])
-    y_top = max(bb1['y1'], bb2['y1'])
-    x_right = min(bb1['x2'], bb2['x2'])
-    y_bottom = min(bb1['y2'], bb2['y2'])
+    x_left = max(bb1["x1"], bb2["x1"])
+    y_top = max(bb1["y1"], bb2["y1"])
+    x_right = min(bb1["x2"], bb2["x2"])
+    y_bottom = min(bb1["y2"], bb2["y2"])
 
     if x_right < x_left or y_bottom < y_top:
         return 0.0
@@ -164,8 +524,8 @@ def get_iou(bb1, bb2):
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
     # compute the area of both AABBs
-    bb1_area = (bb1['x2'] - bb1['x1']) * (bb1['y2'] - bb1['y1'])
-    bb2_area = (bb2['x2'] - bb2['x1']) * (bb2['y2'] - bb2['y1'])
+    bb1_area = (bb1["x2"] - bb1["x1"]) * (bb1["y2"] - bb1["y1"])
+    bb2_area = (bb2["x2"] - bb2["x1"]) * (bb2["y2"] - bb2["y1"])
 
     # compute the intersection over union by taking the intersection
     # area and dividing it by the sum of prediction + ground-truth
@@ -177,28 +537,28 @@ def get_iou(bb1, bb2):
 
 
 def box2d_iou(box1, box2):
-    ''' Compute 2D bounding box IoU.
+    """Compute 2D bounding box IoU.
 
     Input:
         box1: tuple of (xmin,ymin,xmax,ymax)
         box2: tuple of (xmin,ymin,xmax,ymax)
     Output:
         iou: 2D IoU scalar
-    '''
-    return get_iou({'x1': box1[0], 'y1': box1[1], 'x2': box1[2], 'y2': box1[3]}, \
-                   {'x1': box2[0], 'y1': box2[1], 'x2': box2[2], 'y2': box2[3]})
+    """
+    return get_iou(
+        {"x1": box1[0], "y1": box1[1], "x2": box1[2], "y2": box1[3]},
+        {"x1": box2[0], "y1": box2[1], "x2": box2[2], "y2": box2[3]},
+    )
 
 
 # -----------------------------------------------------------
-# Convert from box parameters to 
+# Convert from box parameters to
 # -----------------------------------------------------------
 def roty(t):
     """Rotation about the y-axis."""
     c = np.cos(t)
     s = np.sin(t)
-    return np.array([[c, 0, s],
-                     [0, 1, 0],
-                     [-s, 0, c]])
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
 
 
 def roty_batch(t):
@@ -219,39 +579,45 @@ def roty_batch(t):
 
 
 def get_3d_box(box_size, heading_angle, center):
-    ''' box_size is array(l,w,h), heading_angle is radius clockwise from pos x axis, center is xyz of box center
-        output (8,3) array for 3D box cornders
-        Similar to utils/compute_orientation_3d
-    '''
+    """box_size is array(l,w,h), heading_angle is radius clockwise from pos x axis, center is xyz of box center
+    output (8,3) array for 3D box cornders
+    Similar to utils/compute_orientation_3d
+    """
     R = roty(heading_angle)
     l, w, h = box_size
-    x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2];
-    y_corners = [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2];
-    z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2];
+    x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+    y_corners = [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2]
+    z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
     corners_3d = np.dot(R, np.vstack([x_corners, y_corners, z_corners]))
-    corners_3d[0, :] = corners_3d[0, :] + center[0];
-    corners_3d[1, :] = corners_3d[1, :] + center[1];
-    corners_3d[2, :] = corners_3d[2, :] + center[2];
+    corners_3d[0, :] = corners_3d[0, :] + center[0]
+    corners_3d[1, :] = corners_3d[1, :] + center[1]
+    corners_3d[2, :] = corners_3d[2, :] + center[2]
     corners_3d = np.transpose(corners_3d)
     return corners_3d
 
 
 def get_3d_box_batch(box_size, heading_angle, center):
-    ''' box_size: [x1,x2,...,xn,3]
+    """box_size: [x1,x2,...,xn,3]
         heading_angle: [x1,x2,...,xn]
         center: [x1,x2,...,xn,3]
     Return:
         [x1,x3,...,xn,8,3]
-    '''
+    """
     input_shape = heading_angle.shape
     R = roty_batch(heading_angle)
     l = np.expand_dims(box_size[..., 0], -1)  # [x1,...,xn,1]
     w = np.expand_dims(box_size[..., 1], -1)
     h = np.expand_dims(box_size[..., 2], -1)
     corners_3d = np.zeros(tuple(list(input_shape) + [8, 3]))
-    corners_3d[..., :, 0] = np.concatenate((l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2), -1)
-    corners_3d[..., :, 1] = np.concatenate((h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2), -1)
-    corners_3d[..., :, 2] = np.concatenate((w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2), -1)
+    corners_3d[..., :, 0] = np.concatenate(
+        (l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2), -1
+    )
+    corners_3d[..., :, 1] = np.concatenate(
+        (h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2), -1
+    )
+    corners_3d[..., :, 2] = np.concatenate(
+        (w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2), -1
+    )
     tlist = [i for i in range(len(input_shape))]
     tlist += [len(input_shape) + 1, len(input_shape)]
     corners_3d = np.matmul(corners_3d, np.transpose(R, tuple(tlist)))
@@ -259,7 +625,7 @@ def get_3d_box_batch(box_size, heading_angle, center):
     return corners_3d
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     # Function for polygon ploting
     import matplotlib
@@ -267,14 +633,12 @@ if __name__ == '__main__':
     from matplotlib.collections import PatchCollection
     import matplotlib.pyplot as plt
 
-
     def plot_polys(plist, scale=500.0):
         fig, ax = plt.subplots()
         patches = []
         for p in plist:
             poly = Polygon(np.array(p) / scale, True)
             patches.append(poly)
-
 
     pc = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.5)
     colors = 100 * np.random.rand(len(patches))
@@ -286,7 +650,7 @@ if __name__ == '__main__':
     points = np.random.rand(30, 2)  # 30 random points in 2-D
     hull = ConvexHull(points)
     # **In 2D "volume" is is area, "area" is perimeter
-    print(('Hull area: ', hull.volume))
+    print(("Hull area: ", hull.volume))
     for simplex in hull.simplices:
         print(simplex)
 
@@ -305,16 +669,20 @@ if __name__ == '__main__':
     if inter is not None:
         print(poly_area(np.array(inter)[:, 0], np.array(inter)[:, 1]))
 
-    print('------------------')
-    rect1 = [(0.30026005199835404, 8.9408694211408424), \
-             (-1.1571105364358421, 9.4686676477075533), \
-             (0.1777082043006144, 13.154404877812102), \
-             (1.6350787927348105, 12.626606651245391)]
+    print("------------------")
+    rect1 = [
+        (0.30026005199835404, 8.9408694211408424),
+        (-1.1571105364358421, 9.4686676477075533),
+        (0.1777082043006144, 13.154404877812102),
+        (1.6350787927348105, 12.626606651245391),
+    ]
     rect1 = [rect1[0], rect1[3], rect1[2], rect1[1]]
-    rect2 = [(0.23908745901608636, 8.8551095691132886), \
-             (-1.2771419487733995, 9.4269062966181956), \
-             (0.13138836963152717, 13.161896351296868), \
-             (1.647617777421013, 12.590099623791961)]
+    rect2 = [
+        (0.23908745901608636, 8.8551095691132886),
+        (-1.2771419487733995, 9.4269062966181956),
+        (0.13138836963152717, 13.161896351296868),
+        (1.647617777421013, 12.590099623791961),
+    ]
     rect2 = [rect2[0], rect2[3], rect2[2], rect2[1]]
     plot_polys([rect1, rect2])
     inter, area = convex_hull_intersection(rect1, rect2)

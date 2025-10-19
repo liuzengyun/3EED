@@ -13,12 +13,11 @@ import torch.nn as nn
 import sys
 import os
 
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = "/home/rongl/code/3eed/pointnet2"
-sys.path.append(ROOT_DIR)
-# sys.path.append(os.path.join(ROOT_DIR, "utils"))
-# sys.path.append(os.path.join(ROOT_DIR, "pointnet2"))
-# sys.path.append(os.path.join(ROOT_DIR, "ops", "pt_custom_ops"))
+# Make project root importable dynamically (no hardcoded absolute paths)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 from pointnet2.pointnet2_modules import PointnetSAModuleVotes, PointnetFPModule
 
 # from pointnet2_modules import PointnetSAModuleVotes, PointnetFPModule

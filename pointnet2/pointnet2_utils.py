@@ -15,7 +15,14 @@ import torch
 from torch.autograd import Function
 import torch.nn as nn
 import sys
-sys.path.append("/home/rongl/code/3eed/pointnet2")
+import os
+# Ensure local helpers and the package parent are importable without hardcoded paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.append(PARENT_DIR)
 import pytorch_utils as pt_utils
 
 try:

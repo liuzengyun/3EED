@@ -1,4 +1,4 @@
-TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node 1 --master_port $RANDOM \
+TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node 1 --master_port $((RANDOM % 30000 + 20000)) \
     train_dist_mod.py --num_decoder_layers 6 \
     --use_color \
     --weight_decay 0.0005 \
@@ -12,3 +12,6 @@ TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.
     --use_soft_token_loss --use_contrastive_align \
     --log_dir ./logs/ours \
     --self_attend --augment_det
+
+
+data/3eed_merge/splits 这个是 split 文件，data/3eed_merge 是数据集文件，然后里面的 quad，drone，waymo 是数据集的三个平台，每个数据是一个 json 文件，统计一下每个数据集的 json 文件数量，每个平台有多少 train/val json 文件。

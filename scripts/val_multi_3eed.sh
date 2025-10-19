@@ -1,4 +1,4 @@
-TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node 1 --master_port $RANDOM \
+TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node 1 --master_port $((RANDOM % 30000 + 20000)) \
     train_dist_mod.py --num_decoder_layers 6 \
     --use_color \
     --weight_decay 0.0005 \

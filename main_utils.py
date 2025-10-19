@@ -29,6 +29,7 @@ from utils import get_scheduler, setup_logger
 from tqdm import tqdm
 import shutil
 from torch.utils.tensorboard import SummaryWriter
+import ipdb
 
 
 def parse_option():
@@ -55,7 +56,8 @@ def parse_option():
     parser.add_argument("--batch_size", type=int, default=8, help="Batch Size during training")
     parser.add_argument("--dataset", type=str, default=["sr3d"], nargs="+", help="list of datasets to train on")
     parser.add_argument("--test_dataset", type=str, default=["sr3d"], nargs="+", )
-    parser.add_argument("--data_root", default="./")
+    parser.add_argument("--data_root", default="./", help="Root directory for datasets")
+    parser.add_argument("--split_dir", default="data/splits", help="Directory containing split files (train.txt, val.txt)")
     parser.add_argument("--use_height", action="store_true", help="Use height signal in input.")
     parser.add_argument("--use_color", action="store_true", help="Use RGB color in input.")
     parser.add_argument("--use_multiview", action="store_true")
@@ -118,7 +120,7 @@ def parse_option():
         args.log_dir = args.log_dir + "_eval"
 
     if args.debug:
-        args.num_workers = 1
+        args.num_workers = 0
         args.log_dir = args.log_dir + "_debug"
 
     return args
@@ -182,7 +184,7 @@ class BaseTrainTester:
         if args.flag is not None:
             args.log_dir = os.path.join(args.log_dir, ",".join(args.dataset), str(args.flag))
         else:
-            args.log_dir = os.path.join(args.log_dir, ",".join(args.dataset), f"{int(time.time())}")
+            args.log_dir = os.path.join(args.log_dir, ",".join(args.dataset), time.strftime("%m-%d-%H-%M"))
 
         os.makedirs(args.log_dir, exist_ok=True)
 
@@ -338,7 +340,11 @@ class BaseTrainTester:
         n_data = len(test_loader.dataset)
         self.logger.info(f"length of testing dataset: {n_data}")
 
+        assert len(train_loader.dataset) > 0, f"training set is empty"
+        assert len(test_loader.dataset) > 0, f"test set is empty"
+        
         # Get model
+        # ipdb.set_trace()
         model = self.get_model(args)
 
         # Get criterion

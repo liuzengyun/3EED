@@ -55,6 +55,7 @@ class TrainTester(BaseTrainTester):
             use_height=args.use_height,
             overfit=args.debug,
             data_path=args.data_root,
+            split_dir=args.split_dir,
             detect_intermediate=args.detect_intermediate,
             use_multiview=args.use_multiview,
             butd=args.butd,
@@ -71,6 +72,7 @@ class TrainTester(BaseTrainTester):
             use_height=args.use_height,
             overfit=args.debug,
             data_path=args.data_root,
+            split_dir=args.split_dir,
             detect_intermediate=args.detect_intermediate,
             use_multiview=args.use_multiview,
             butd=args.butd,
@@ -173,6 +175,7 @@ class TrainTester(BaseTrainTester):
             for t in thres:
                 acc_bbf = dets[("total_acc", t, "bbf")] / gts[("total_acc", t, "bbf")]
                 self.tb_writer.add_scalar(f"Eval/acc@{t}", acc_bbf, epoch)
+                self.logger.info(f"Eval/acc@{t}: {acc_bbf:.4f}")
         
         miou = evaluator.dets["iou"] / evaluator.dets["num_iou"]
         self.logger.info("mIoU: {:.4f}".format(miou))
@@ -185,7 +188,7 @@ class TrainTester(BaseTrainTester):
             save_json = os.path.join(save_path, "prediction.json")
             with open(save_json, "w") as f:
                 json.dump(pred, f, indent=4)
-        print("Saved predictions at ", self.log_dir)
+        print("\033[92mSaved predictions at", self.log_dir, "\033[0m")
 
         return None
 

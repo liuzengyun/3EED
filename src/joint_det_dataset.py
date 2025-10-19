@@ -28,7 +28,7 @@ from utils.pcds_in_bbox import get_points_in_bbox
 from ops.teed_pointnet.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
 
 import pickle
-
+import ipdb
 # ==================== Constants ====================
 MAX_NUM_OBJ = 132
 
@@ -89,13 +89,6 @@ M3ED_SYNONYMS = {
     "pedestrian": ["pedestrian", "person", "man", "woman", "people", "child", "boy", "girl", "adult", "passerby", "walker", "cyclist", "biker", "bike rider", "rider"],
 }
 
-# Dataset paths
-DATASET_PATHS = {
-    "waymo": "waymo",
-    "m3ed-drone": "M3ED-Drone",
-    "m3ed-quad": "M3ED-Quadruped",
-}
-
 
 # ==================== Dataset Class ====================
 class Joint3DDataset(Dataset):
@@ -108,6 +101,7 @@ class Joint3DDataset(Dataset):
         split="train",
         overfit=False,
         data_path="./",
+        split_dir="data/splits",
         use_color=False,
         use_height=False,
         use_multiview=False,
@@ -131,10 +125,11 @@ class Joint3DDataset(Dataset):
         self.augment = self.split == "train"
         self.use_multiview = use_multiview
         self.data_path = data_path
+        self.split_dir = split_dir
         self.visualize = False
         # self.visualize = True
         if self.visualize:
-            self.vis_save_dir = "./visualization/wo_cpa"
+            self.vis_save_dir = "./visualization/"
             os.makedirs(self.vis_save_dir, exist_ok=True)
 
         self.butd = butd
@@ -148,9 +143,9 @@ class Joint3DDataset(Dataset):
         self.tokenizer = RobertaTokenizerFast.from_pretrained("./data/roberta_base/")
 
         # Load classification results if available
-        if os.path.exists("data/cls_results.json"):
-            with open("data/cls_results.json") as fid:
-                self.cls_results = json.load(fid)
+        # if os.path.exists("data/cls_results.json"):
+        #     with open("data/cls_results.json") as fid:
+        #         self.cls_results = json.load(fid) 
 
         # Load annotations
         self.annos = []
@@ -167,12 +162,6 @@ class Joint3DDataset(Dataset):
     def _format_caption(self, utterance):
         """Format caption by adding spaces and handling commas."""
         return " " + " ".join(utterance.replace(",", " ,").split()) + " "
-
-    def _get_dataset_path(self, dataset):
-        """Get dataset path based on dataset type."""
-        if dataset not in DATASET_PATHS:
-            raise NotImplementedError(f"Dataset {dataset} not implemented")
-        return os.path.join(self.data_path, "3eed", DATASET_PATHS[dataset])
 
     def _get_frame_paths(self, frame_path, dataset):
         """Get all relevant file paths for a frame."""
@@ -196,7 +185,7 @@ class Joint3DDataset(Dataset):
         """Process utterance based on dataset type."""
         if dataset == "waymo":
             return utterance
-        elif dataset in ["m3ed-drone", "m3ed-quad"]:
+        elif dataset in ["drone", "quad"]:
             return utterance.split("Summary:")[-1].strip()
         return utterance
 
@@ -207,10 +196,11 @@ class Joint3DDataset(Dataset):
     # ==================== Data Loading Methods ====================
     def load_annos(self, dset):
         """Load annotations of given dataset."""
+        # ipdb.set_trace()
         loaders = {
             "waymo": lambda: self.load_3eed_annos(dataset="waymo"),
-            "m3ed-drone": lambda: self.load_3eed_annos(dataset="m3ed-drone"),
-            "m3ed-quad": lambda: self.load_3eed_annos(dataset="m3ed-quad"),
+            "drone": lambda: self.load_3eed_annos(dataset="drone"),
+            "quad": lambda: self.load_3eed_annos(dataset="quad"),
             "waymo-multi": lambda: self.waymo_multi_annos(dataset="waymo-multi"),
         }
         annos = loaders[dset]()
@@ -308,14 +298,14 @@ class Joint3DDataset(Dataset):
         split = "train" if self.split == "train" else "val"
 
         # Set data path based on dataset type
+        data_path = os.path.join(self.data_path, dataset)
+        assert os.path.exists(data_path), f"data path not found: {data_path}"
+        
         if dataset == "waymo":
-            data_path = self._get_dataset_path("waymo")
             synonyms_dict = WAYMO_SYNONYMS
-        elif dataset == "m3ed-drone":
-            data_path = self._get_dataset_path("m3ed-drone")
+        elif dataset == "drone":
             synonyms_dict = M3ED_SYNONYMS
-        elif dataset == "m3ed-quad":
-            data_path = self._get_dataset_path("m3ed-quad")
+        elif dataset == "quad":
             synonyms_dict = M3ED_SYNONYMS
         else:
             raise NotImplementedError
@@ -323,18 +313,23 @@ class Joint3DDataset(Dataset):
         frames_names = []
 
         # Load sequence list from split file
-        with open(f"data/splits/{dataset}_{split}.txt") as f:
+        split_file = os.path.join(self.split_dir, f"{dataset}_{split}.txt")
+        with open(split_file) as f:
             sequence_list = [line.rstrip() for line in f]
 
         for sequence in sequence_list:
+            if not os.path.exists(os.path.join(data_path, sequence)):
+                continue
             # List all frame directories in the sequence
             frame_list = [f for f in os.listdir(os.path.join(data_path, sequence)) if os.path.isdir(os.path.join(data_path, sequence, f))]
             for frame in frame_list:
+                # if not os.path.exists(os.path.join(data_path, sequence, frame)):
+                #     continue
                 frames_names.append(os.path.join(sequence, frame))
 
         annos = []
         class_set = set()  # Store unique classes for statistics
-        for frame_name in tqdm(frames_names):
+        for frame_name in tqdm(frames_names, desc=f"Loading {dataset} {split} annotations"):
             frame_path = os.path.join(data_path, frame_name)  # e.g. waymo/scene-0000/0000_0
             image_path = self._get_frame_paths(frame_path, dataset)["image"]
             lidar_path = self._get_frame_paths(frame_path, dataset)["lidar"]
@@ -351,15 +346,15 @@ class Joint3DDataset(Dataset):
                 class_set.add(obj["class"].lower())  # Add class to set for statistics
 
                 # Get positive map
-                try:
-                    utterance = obj["caption"]
-                except:
-                    # Log error frame information
-                    self._log_error(f"{frame_name} | obj: {obj}", class_names=[obj["class"].lower()], dataset=dataset)
-                    continue
+                # try:
+                utterance = obj["caption"]
+                # except:
+                #     # Log error frame information
+                #     self._log_error(f"{frame_name} | obj: {obj}", class_names=[obj["class"].lower()], dataset=dataset)
+                #     continue
 
                 # Process utterance based on dataset type
-                utterance = self._process_utterance(utterance, dataset)
+                # utterance = self._process_utterance(utterance, dataset)
 
                 cat_names = obj["class"].lower()
 
@@ -392,7 +387,7 @@ class Joint3DDataset(Dataset):
                         "target_id": CLASS_MAPPINGS[obj["class"].lower()],
                         "target": obj["class"].lower(),
                         "utterance": utterance,
-                        "pred_pos_map": gt_map,  # TODO: Process span using VLM
+                        "pred_pos_map": gt_map,  
                         "meta_path": meta_path,
                         "dataset": dataset,
                         "pcd_path": lidar_path,
@@ -429,13 +424,13 @@ class Joint3DDataset(Dataset):
             # reflectance_3d = np.tanh(np.concatenate([pcd[:, 3:5], pcd[:, 3].reshape(-1, 1)], axis=1))  # (n_p, 3)
             reflectance = np.tanh(reflectance)
 
-        elif anno["dataset"] == "m3ed-quad":
+        elif anno["dataset"] == "quad":
             # pass
             xyz, pose = convert_points_to_virtual(xyz, pose=np.asarray(anno["pose"]), drone=False)
             anno["pose"] = pose
 
-        elif anno["dataset"] == "m3ed-drone":
-            xyz[:, 2] += 1.8  # NOTE m3ed-drone dataset's z coordinate needs to be subtracted by 1.8 three platforms can be horizontally aligned
+        elif anno["dataset"] == "drone":
+            xyz[:, 2] += 1.8  # NOTE drone dataset's z coordinate needs to be subtracted by 1.8 three platforms can be horizontally aligned
             # pass
             xyz, pose = convert_points_to_virtual(xyz, pose=np.asarray(anno["pose"]), drone=True)
             anno["pose"] = pose
@@ -514,23 +509,25 @@ class Joint3DDataset(Dataset):
         point_indices = points_in_boxes_cpu(torch.from_numpy(xyz), torch.from_numpy(bbox)).numpy()
         point_instance_label[point_indices[0]] = 0
 
-        if anno["dataset"] == "m3ed-drone":
+        if anno["dataset"] == "drone":
             bbox = bbox.reshape(-1)
             bbox[2] += 1.8
             bbox = convert_boxes_from_n_to_vir(bbox, anno["pose"], drone=True)
-        elif anno["dataset"] == "m3ed-quad":
+        elif anno["dataset"] == "quad":
             bbox = convert_boxes_from_n_to_vir(bbox, anno["pose"], drone=False)
 
         bbox = bbox.reshape(-1)
         bbox = bbox[:7]
 
+        ipdb.set_trace()
+        # TODO check 一下，这里的逻辑是不是 前 N 个填入真实的 bbox
         # Generate axis_align_bbox for 3D object
         bboxes = np.zeros((MAX_NUM_OBJ, 7))
-        bboxes[: len(tids)] = bbox[:7]  # shape: (N, 6)
+        bboxes[: len(tids)] = bbox[:7]  # shape: (N, 6) # 前 N 个填入真实的 bbox
 
-        bboxes[len(tids) :, :3] = 1000  # Fill bbox for non-target objects # First len(tids) are real targets, rest are padding
+        bboxes[len(tids) :, :3] = 1000  # 后 MAX_NUM_OBJ - N 个填入 1000，表示无目标
         box_label_mask = np.zeros(MAX_NUM_OBJ)
-        box_label_mask[: len(tids)] = 1  # Mark which bboxes are valid
+        box_label_mask[: len(tids)] = 1  # 标记前 N 个是有效的
 
         # Generate axis_align_bbox for debug
         if self.visualize:
@@ -695,7 +692,13 @@ class Joint3DDataset(Dataset):
         # Point cloud representation
         point_cloud = self._get_3eed_pcd(anno)
         gt_bboxes, box_label_mask, point_instance_label = self._get_3eed_target_boxes(anno, point_cloud)
-
+        ipdb.set_trace()
+        
+        if anno["dataset"] == "waymo":
+            assert gt_bboxes.shape[-1] == 7
+        else:
+            assert gt_bboxes.shape[-1] == 9
+        
         if anno["dataset"] == "waymo":
             lidar_id = int(anno["scan_id"].split("_")[-1])
             xyz = point_cloud[:, :3]

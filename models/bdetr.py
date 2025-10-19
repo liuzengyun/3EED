@@ -18,7 +18,9 @@ from .point_backbone_module_v2 import Point_Backbone_V2, get_cfg
 from .backbone_module import Pointnet2Backbone
 from .modules import PointsObjClsModule, GeneralSamplingModule, ClsAgnosticPredictHead, PositionEmbeddingLearned
 from .encoder_decoder_layers import BiEncoder, BiEncoderLayer, BiDecoderLayer
+import ipdb
 
+st = ipdb.set_trace
 
 class BeaUTyDETR(nn.Module):
     """
@@ -62,11 +64,12 @@ class BeaUTyDETR(nn.Module):
         self.butd = butd
 
         # Visual encoder
+        # ipdb.set_trace()
         # self.backbone_net = Pointnet2Backbone(input_feature_dim=0, width=1)
         # if input_feature_dim == 3 and pointnet_ckpt is not None:
-        # self.backbone_net.load_state_dict(torch.load(pointnet_ckpt), strict=False)
-        cfg = get_cfg()
-        self.backbone_net = Point_Backbone_V2(model_cfg=cfg.BACKBONE_3D, num_class=num_class, input_channels=3)
+        #     self.backbone_net.load_state_dict(torch.load(pointnet_ckpt), strict=False)
+        # cfg = get_cfg()
+        self.backbone_net = Point_Backbone_V2(model_cfg=get_cfg().BACKBONE_3D, num_class=num_class, input_channels=3)
 
         # Text Encoder
         t_type = "./data/roberta_base/"

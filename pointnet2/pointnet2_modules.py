@@ -16,8 +16,11 @@ import torch.nn.functional as F
 import os
 import sys
 
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append("/home/rongl/code/3eed/")
+# Add project root dynamically to sys.path so `pointnet2` can be imported
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
 from pointnet2 import pointnet2_utils
 from pointnet2 import pytorch_utils as pt_utils

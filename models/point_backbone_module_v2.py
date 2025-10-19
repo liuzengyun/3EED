@@ -8,7 +8,6 @@ import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
-sys.path.append("/home/rongl/code/3eed/")
 from ops.teed_pointnet.pointnet2_batch import pointnet2_modules
 from pointnet2.pointnet2_modules import PointnetFPModule
 
