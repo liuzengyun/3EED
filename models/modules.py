@@ -169,5 +169,5 @@ class ClsAgnosticPredictHead(nn.Module):
         end_points[f"{prefix}pred_size"] = pred_size
 
         if self.compute_sem_scores:
-            end_points[f"{prefix}sem_cls_scores"] = sem_cls_scores  # TODO 搞明白这个是什么意思
+            end_points[f"{prefix}sem_cls_scores"] = sem_cls_scores  # TODO: understand what this means
         return center, pred_size

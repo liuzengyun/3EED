@@ -229,16 +229,16 @@ class GroundingEvaluator:
             assert num_obj == 1, f"num_obj: {num_obj}. only support obj number is 1."
             # Currently only single-object settings supported (quad/drone/waymo single target)
             
-            # 4.2 计算每个 query 与目标描述的匹配分数
+            # 4.2 Compute the matching score between each query and the target description
             pmap = positive_map[bid, :num_obj]  # (1, 256) - target token positions
             # e.g., for "the red car", pmap marks token positions for "red" and "car"
             
             scores = (sem_scores[bid].unsqueeze(0) * pmap.unsqueeze(1)).sum(-1)  # (1, 256)
-            # sem_scores[bid]: (256, 256) - 当前样本的 256 个 queries 对所有 tokens 的分数
+            # sem_scores[bid]: (256, 256) - scores of 256 queries against all tokens for the current sample
             # .unsqueeze(0): (1, 256, 256)
-            # pmap.unsqueeze(1): (1, 1, 256) - 目标 token 的 mask
-            # 相乘后 sum(-1)：只保留目标 tokens 的分数，得到每个 query 的总分
-            # 结果：(1, 256) - 256 个 queries 对目标描述的匹配分数
+            # pmap.unsqueeze(1): (1, 1, 256) - mask of target tokens
+            # multiply then sum(-1): keep only scores on target tokens to get per-query total
+            # result: (1, 256) - 256 queries' matching scores to the target description
 
             # 4.3 Select top-10 highest scoring candidates
             top = scores.argsort(1, True)[:, :10]  # (1, 10)
@@ -252,8 +252,8 @@ class GroundingEvaluator:
             # 4.4 Compute IoU
             # ious, _ = _iou3d_par(
             #     box_cxcyczwhd_to_xyzxyz(gt_bboxes[bid][:num_obj]),  # (1, 6) - gt bbox
-            #     box_cxcyczwhd_to_xyzxyz(pbox)  # (10, 6) - top-10 预测框
-            # )  # 返回 (1, 10) - 1 个 gt 与 10 个预测框的 IoU
+            #     box_cxcyczwhd_to_xyzxyz(pbox)  # (10, 6) - top-10 predicted boxes
+            # )  # returns (1, 10) - IoU between 1 GT and 10 predicted boxes
             
             # 4.4 Compute IoU (rotated GT vs axis-aligned pred)
             gt_boxes = gt_bboxes_rotated[bid][:num_obj]  # (1, 7) or (1, 9) - with rotation

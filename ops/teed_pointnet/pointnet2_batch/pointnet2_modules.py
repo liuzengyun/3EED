@@ -233,12 +233,12 @@ class PointnetSAModuleMSG_WithSampling(_PointnetSAModuleBase):
 
             for i in range(len(self.sample_type_list)): # D-FPS
                 sample_type = self.sample_type_list[i]
-                sample_range = self.sample_range_list[i] # -1 全部
+                sample_range = self.sample_range_list[i] # -1 means all
                 npoint = self.npoint_list[i]
 
                 if npoint <= 0:
                     continue
-                if sample_range == -1:  # 全部
+                if sample_range == -1:  # all
                     xyz_tmp = xyz[:, last_sample_end_index:, :]
                     if features is not None:
                         feature_tmp = features.transpose(1, 2)[:, last_sample_end_index:, :].contiguous()

@@ -270,7 +270,6 @@ class Joint3DDataset(Dataset):
                     matched_cls = positions[i][2]  # e.g. van
                     all_positive.append(tokens_positive)
             else:
-                # 记录哪些匹配失败
                 self._log_error(f"match failed: {utterance}", class_names=class_names, dataset="waymo-multi")
                 continue
             # caption
@@ -485,7 +484,6 @@ class Joint3DDataset(Dataset):
         # Generate axis_align_bbox for 3D object
         bbox = np.array(anno["gt_bbox"])#.reshape(-1)
         
-        # ⭐ Add 1.8m to drone bbox to match point cloud height
         if anno["dataset"] == "drone":
             bbox[2] += 1.8  
         
@@ -754,7 +752,7 @@ class Joint3DDataset(Dataset):
         ret_dict = {
             "box_label_mask": box_label_mask.astype(np.float32),
             "center_label": gt_bboxes[:, :3].astype(np.float32),
-            "sem_cls_label": _labels,  # NOTE 计算 loss 的时候用到
+            "sem_cls_label": _labels,  # NOTE Used in loss calculation
             "size_gts": gt_bboxes[:, 3:6].astype(np.float32),
             "gt_bboxes": gt_bboxes.astype(np.float32),
             "class_ids": ",".join(map(str, anno["boxes_info"]["class_id"])),  # e.g., "1,3,5"
