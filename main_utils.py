@@ -54,7 +54,7 @@ def parse_option():
 
     # Data
     parser.add_argument("--batch_size", type=int, default=8, help="Batch Size during training")
-    parser.add_argument("--dataset", type=str, default=["sr3d"], nargs="+", help="list of datasets to train on")
+    parser.add_argument("--dataset", type=str, default=["quad"], nargs="+", help="list of datasets to train on")
     parser.add_argument("--test_dataset", type=str, default=["sr3d"], nargs="+", )
     parser.add_argument("--data_root", default="./", help="Root directory for datasets")
     parser.add_argument("--split_dir", default="data/splits", help="Directory containing split files (train.txt, val.txt)")
@@ -89,7 +89,6 @@ def parse_option():
     parser.add_argument(
         "--checkpoint_path",
         default=None,
-        # default="/home/rongl/code/3eed/logs/bdetr/scanrefer/epch29_0645/ckpt_epoch_25.pth",
         help="Model checkpoint path",
     )
     parser.add_argument("--log_dir", default="log", help="Dump dir to save model checkpoint")
@@ -116,13 +115,36 @@ def parse_option():
     args, _ = parser.parse_known_args()
 
     args.eval = args.eval or args.eval_train
+    
+    # Set log_dir based on eval mode
     if args.eval:
-        args.log_dir = args.log_dir + "_eval"
-
+        # For evaluation: use checkpoint_path's parent directory + /evaluation
+        checkpoint_dir = os.path.dirname(args.checkpoint_path)
+        
+        test_datasets = "_".join(args.test_dataset)
+        exp_name = f"Val_{test_datasets}"
+        args.log_dir = os.path.join(checkpoint_dir, "eval", exp_name, time.strftime('%m%d_%H%M'))
+    else:
+        # For training: use Train_<datasets>_Val_<test_datasets> format
+        train_datasets = "_".join(args.dataset)
+        test_datasets = "_".join(args.test_dataset)
+        exp_name = f"Train_{train_datasets}_Val_{test_datasets}"
+        
+        if args.flag is not None:
+            exp_name = f"{exp_name}/{args.flag}"
+        else:
+            exp_name = f"{exp_name}/{time.strftime('%m%d_%H%M')}"
+        
+        args.log_dir = os.path.join(args.log_dir, exp_name)
+    
+    # Add debug suffix if needed
     if args.debug:
         args.num_workers = 0
-        args.log_dir = args.log_dir + "_debug"
+        args.log_dir =  os.path.join(args.log_dir, "debug")
 
+    os.makedirs(args.log_dir, exist_ok=True)
+    print(f"\033[93mLog directory: {args.log_dir}\033[0m")
+    # exit()
     return args
 
 
@@ -179,17 +201,7 @@ class BaseTrainTester:
     def __init__(self, args):
         """Initialize."""
         name = args.log_dir.split("/")[-1]
-        # Create log dir
-
-        if args.flag is not None:
-            args.log_dir = os.path.join(args.log_dir, ",".join(args.dataset), str(args.flag))
-        else:
-            args.log_dir = os.path.join(args.log_dir, ",".join(args.dataset), time.strftime("%m-%d-%H-%M"))
-
-        os.makedirs(args.log_dir, exist_ok=True)
-
-        # import pdb
-        # pdb.set_trace()
+        
         self.debug = args.debug
 
         # Create logger
@@ -205,18 +217,18 @@ class BaseTrainTester:
             self.logger.info("Full config saved to {}".format(path))
             self.logger.info(str(vars(args)))
 
-        # Backup used python file
-        # 主进程保存配置 + 备份代码
+        # Backup used python files
+        # Main process saves config and backs up code
         if dist.get_rank() == 0:
 
-            # 保存 config
+            # Save config
             path = os.path.join(args.log_dir, "config.json")
             with open(path, "w") as f:
                 json.dump(vars(args), f, indent=2)
             self.logger.info("Full config saved to {}".format(path))
             self.logger.info(str(vars(args)))
 
-            # 备份代码
+            # Backup code
             backup_files = ["main_utils.py", "prepare_data.py", "train_dist_mod.py"]
             backup_dirs = ["models", "src", "utils", "scripts"]
             backup_path = os.path.join(args.log_dir, "code_backup")
@@ -227,7 +239,7 @@ class BaseTrainTester:
         # import pdb
 
         # pdb.set_trace()
-        # 只在主进程初始化 TensorBoard
+        # Initialize TensorBoard only in main process
         if dist.get_rank() == 0:
             tb_logdir = os.path.join(args.log_dir, "tensorboard")
             self.tb_writer = SummaryWriter(log_dir=tb_logdir)
@@ -246,7 +258,7 @@ class BaseTrainTester:
         def ignore_non_py_files(dir, files):
             return [f for f in files if not (f.endswith(".py") or f.endswith(".sh") or os.path.isdir(os.path.join(dir, f)))]
 
-        # 复制单个 .py 文件
+        # Copy single .py files
         for file in files:
             src_path = os.path.abspath(file)
             if os.path.exists(src_path) and src_path.endswith(".py"):
@@ -254,7 +266,7 @@ class BaseTrainTester:
             else:
                 print(f"[Warning] File not found or not a .py file: {src_path}")
 
-        # 复制目录下的 .py 文件
+        # Copy .py files in directories
         for dir_ in dirs:
             src_path = os.path.abspath(dir_)
             dst_path = os.path.join(target_dir, os.path.basename(dir_))
@@ -277,18 +289,24 @@ class BaseTrainTester:
         # Samplers and loaders
         g = torch.Generator()
         g.manual_seed(0)
-        train_sampler = DistributedSampler(train_dataset)
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            worker_init_fn=seed_worker,
-            pin_memory=True,
-            sampler=train_sampler,
-            drop_last=True,
-            generator=g,
-        )
+        
+        # Only create train_loader if not in eval mode
+        if args.eval or train_dataset is None:
+            train_loader = None
+        else:
+            train_sampler = DistributedSampler(train_dataset)
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
+                num_workers=args.num_workers,
+                worker_init_fn=seed_worker,
+                pin_memory=True,
+                sampler=train_sampler,
+                drop_last=True,
+                generator=g,
+            )
+        
         test_sampler = DistributedSampler(test_dataset, shuffle=False)
         test_loader = DataLoader(
             test_dataset,
@@ -335,12 +353,15 @@ class BaseTrainTester:
         """Run main training/testing pipeline."""
         # Get loaders
         train_loader, test_loader = self.get_loaders(args)
-        n_data = len(train_loader.dataset)
-        self.logger.info(f"length of training dataset: {n_data}")
+        
+        # Only check training dataset if not in eval mode
+        if not args.eval and train_loader is not None:
+            n_data = len(train_loader.dataset)
+            self.logger.info(f"length of training dataset: {n_data}")
+            assert len(train_loader.dataset) > 0, f"training set is empty"
+        
         n_data = len(test_loader.dataset)
         self.logger.info(f"length of testing dataset: {n_data}")
-
-        assert len(train_loader.dataset) > 0, f"training set is empty"
         assert len(test_loader.dataset) > 0, f"test set is empty"
         
         # Get model
@@ -354,7 +375,11 @@ class BaseTrainTester:
         optimizer = self.get_optimizer(args, model)
 
         # Get scheduler
-        scheduler = get_scheduler(optimizer, len(train_loader), args)
+        if train_loader is not None:
+            scheduler = get_scheduler(optimizer, len(train_loader), args)
+        else:
+            # In eval mode, create a dummy scheduler
+            scheduler = get_scheduler(optimizer, 1, args)
 
         # Move model to devices
         if torch.cuda.is_available():
@@ -525,7 +550,6 @@ class BaseTrainTester:
                 )
             )
 
-        # ====== 加入 TensorBoard 记录 loss ======
         if self.tb_writer:
             for key in sorted(stat_dict.keys()):
                 if "loss" in key and "proposal_" not in key and "last_" not in key and "head_" not in key:

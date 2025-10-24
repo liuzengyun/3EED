@@ -41,7 +41,7 @@ def count_json_and_objects_in_scene(scene_path):
                             obj_count = 1 + len(data['ground_info'][0]['others'])
                             object_count += obj_count
                             objects_per_json.append(obj_count)
-                            # ! 统计是否计算 others？
+                            # ! Whether to count 'others'?
                 except Exception as e:
                     print(f"  Warning: Failed to read {json_path}: {e}")
     
@@ -240,9 +240,9 @@ def analyze_platform(data_root, splits_dir, platform_name):
 
 def main():
     # Dataset root directory
-    data_root = '/vepfs-cnbj70aef516b63d/rongli/code/3eed/data/3eed_merge'
+    data_root = 'code/3eed/data/3eed_merge'
     # data_root = 'data/3eed'
-    splits_dir = '/vepfs-cnbj70aef516b63d/rongli/code/3eed/data/splits'
+    splits_dir = 'code/3eed/data/splits'
     # Alternative: use relative paths if running from project root
     # data_root = 'data/3eed_merge'
     # splits_dir = 'data/3eed_merge/splits'

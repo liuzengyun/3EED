@@ -48,13 +48,13 @@ def draw_projected_box3d(image, qs, color=(0, 255, 0), thickness=5):
       |/         |/
       6 -------- 7
     """
-    # 处理PIL图像输入
-    if hasattr(image, "convert"):  # 检查是否为PIL图像
-        # 转换为RGB模式并转为numpy数组
+    # Handle PIL image input
+    if hasattr(image, "convert"):  # Check if it's a PIL image
+        # Convert to RGB mode and then to numpy array
         if image.mode != "RGB":
             image = image.convert("RGB")
         image = np.array(image)
-        # PIL图像是RGB格式，需要转换为BGR格式供OpenCV使用
+        # PIL images are RGB; convert to BGR for OpenCV
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     qs = qs.astype(np.int32)
@@ -187,7 +187,6 @@ def cart_to_hom(pts):
     pts_hom = np.hstack((pts, np.ones((pts.shape[0], 1), dtype=np.float32)))
     return pts_hom
 
-
 def draw_points_on_image(
     image,
     points_2d,
@@ -197,7 +196,7 @@ def draw_points_on_image(
     create_mask=False,
     valid_mask=None,
 ):
-    # 统一为 BGR np.uint8
+    # Ensure image is BGR np.uint8
     if hasattr(image, "convert"):
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -214,63 +213,63 @@ def draw_points_on_image(
             return result_image, mask
         return result_image
 
-    # 四舍五入 + 裁剪到图像边界
+    # Round to int, clip to image boundary
     u = np.rint(P[:, 0]).astype(np.int32)
     v = np.rint(P[:, 1]).astype(np.int32)
     inb = (u >= 0) & (u < W) & (v >= 0) & (v < H)
     u, v = u[inb], v[inb]
 
-    # 画点（可选）
+    # Draw points (optional)
     for x, y in zip(u, v):
         cv2.circle(result_image, (x, y), radius, color, -1)
 
     if not create_mask:
         # if save_path is not None:
-        # cv2.imwrite(save_path, result_image)
-        # print(f"    点云图像已保存: {save_path}")
+        #     cv2.imwrite(save_path, result_image)
+        #     print(f"    Point cloud image saved: {save_path}")
         return result_image
 
-    # 单通道 uint8 mask：先直接置点为255，再统一做形态学连接
+    # Single channel uint8 mask: set points to 255, then morphological connectivity
     mask = np.zeros((H, W), np.uint8)
     mask[v, u] = 255
 
-    # 让稀疏的“多排点”连成片：根据点密度调 kernel/iterations
+    # Make sparse "multi-row points" connect: adjust kernel/iterations by point density
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=2)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
     # if save_path is not None:
-    # cv2.imwrite(save_path, result_image)
-    # print(f"    点云图像已保存: {save_path}")
+    #     cv2.imwrite(save_path, result_image)
+    #     print(f"    Point cloud image saved: {save_path}")
     return result_image, mask
 
 
 def extract_points_in_bbox_3d(lidar_points, bbox_3d):
     """
-    从点云中提取3D边界框内的点
+    Extract points inside a 3D bounding box from point cloud
 
     Args:
-        lidar_points: 点云数据 (N, 4) - [x, y, z, intensity]
-        bbox_3d: 3D边界框 [x, y, z, l, w, h, yaw] 或 [x, y, z, l, w, h, yaw, pitch, roll]
+        lidar_points: point cloud data (N, 4) - [x, y, z, intensity]
+        bbox_3d: 3D bounding box [x, y, z, l, w, h, yaw] or [x, y, z, l, w, h, yaw, pitch, roll]
         
-        7维bbox (waymo)：[x, y, z, l, w, h, yaw]
-        只有 yaw 一个旋转角度（绕z轴旋转）
-        9维bbox (quad, drone)：[x, y, z, l, w, h, yaw, pitch, roll]
-        有三个旋转角度：yaw（绕z轴）、pitch（绕y轴）、roll（绕x轴）
+        7-dim bbox (waymo): [x, y, z, l, w, h, yaw]
+        Only yaw rotation (about z-axis)
+        9-dim bbox (quad, drone): [x, y, z, l, w, h, yaw, pitch, roll]
+        Three rotation angles: yaw (about z), pitch (about y), roll (about x)
 
     Returns:
-        np.ndarray: 边界框内的点云
+        np.ndarray: points inside bounding box
     """
-    # 处理不同长度的bbox_3d
+    # Handle different bbox_3d lengths
     if len(bbox_3d) == 7:
         x, y, z, l, w, h, yaw = bbox_3d
-        pitch, roll = 0.0, 0.0  # 默认值
+        pitch, roll = 0.0, 0.0  # default value
     elif len(bbox_3d) == 9:
         x, y, z, l, w, h, yaw, pitch, roll = bbox_3d
     else:
         raise ValueError(f"bbox_3d must have length 7 or 9, got {len(bbox_3d)}")
 
-    # 创建旋转矩阵
+    # Create rotation matrix
     cos_yaw = np.cos(yaw)
     sin_yaw = np.sin(yaw)
     cos_pitch = np.cos(pitch)
@@ -278,14 +277,14 @@ def extract_points_in_bbox_3d(lidar_points, bbox_3d):
     cos_roll = np.cos(roll)
     sin_roll = np.sin(roll)
 
-    # 旋转矩阵 (简化版本，只考虑yaw)
+    # Rotation matrix (simplified version, only yaw considered)
     R = np.array([[cos_yaw, -sin_yaw, 0], [sin_yaw, cos_yaw, 0], [0, 0, 1]])
 
-    # 将点云转换到边界框坐标系
+    # Transform points to box coordinate system
     points_centered = lidar_points[:, :3] - np.array([x, y, z])
     points_rotated = (R.T @ points_centered.T).T
 
-    # 检查点是否在边界框内
+    # Check if points are inside the box
     half_l, half_w, half_h = l / 2, w / 2, h / 2
     mask = (
         (points_rotated[:, 0] >= -half_l)
@@ -301,23 +300,23 @@ def extract_points_in_bbox_3d(lidar_points, bbox_3d):
 
 def project_points_to_2d(points_3d, image_shape, item_info):
     """
-    将3D点云投影到2D图像平面
+    Project 3D points onto a 2D image plane
 
     Args:
-        points_3d: (N, 3) 3D点云坐标
-        image_shape: (H, W) 图像尺寸
-        item_info: dict 包含相机参数的信息字典
+        points_3d: (N, 3) 3D point cloud coordinates
+        image_shape: (H, W) image shape
+        item_info: dict, containing camera parameters
 
     Returns:
-        points_2d: (N, 2) 投影后的2D坐标
-        depth: (N,) 深度值
-        valid_mask: (N,) 有效点掩码
+        points_2d: (N, 2) projected 2D coordinates
+        depth: (N,) depth values
+        valid_mask: (N,) valid points mask
     """
-    # 获取相机外参
+    # Get camera extrinsic
     # try:
     extrinsic = np.array(item_info["image_extrinsic"])
     # extrinsic = np.linalg.inv(extrinsic)
-    # # 只在 shape 不是 4x4 时才应用 axis_tf
+    # # Only apply axis_tf if shape is not 4x4
     assert extrinsic.shape == (
         4,
         4,
@@ -327,43 +326,43 @@ def project_points_to_2d(points_3d, image_shape, item_info):
     # except:
     #     extrinsic = np.array(item_info["extristric"])
 
-    # 获取相机内参
+    # Get camera intrinsic
     K = np.array(item_info["image_intrinsic"])[:3, :3]
 
-    # 获取畸变参数
+    # Get distortion parameters
     if "camera_distortion" in item_info:
         D = np.array(item_info["camera_distortion"])
     else:
-        # 如果没有提供畸变参数，使用默认值
+        # If distortion not provided, use default
         D = np.zeros(4, dtype=np.float32)
 
-    # 将3D点转换为齐次坐标
+    # Convert 3D points to homogeneous coordinates
     points_hom = cart_to_hom(points_3d)
 
-    # 将点从世界坐标系转换到相机坐标系
+    # Transform points from world to camera coordinate system
     points_cam = points_hom @ extrinsic.T
 
-    # 获取深度值
+    # Get depth values
     depth = points_cam[:, 2]
 
-    # 设置旋转和平移向量（这里使用零向量，因为变换已经包含在extrinsic中）
+    # Set rotation and translation vectors (use zero because transformation is in extrinsic)
     rvecs = np.zeros((3, 1))
     tvecs = np.zeros((3, 1))
 
-    # 投影到图像平面
+    # Project points to image plane
     pts_img, _ = cv2.projectPoints(
         points_cam[:, :3].astype(np.float32), rvecs, tvecs, K, D
     )
 
-    # 提取2D坐标
+    # Extract 2D coordinates
     points_2d = pts_img[:, 0, :]
 
-    # 创建有效点掩码；False 表示该点投影后是无效的（超出图像边界或深度不合理）
-    # 1. 图像边界检查：
-    # points_2d[:, 1] >= 0 和 points_2d[:, 1] < image_shape[0]：检查投影后的y坐标是否在图像高度范围内
-    # points_2d[:, 0] >= 0 和 points_2d[:, 0] < image_shape[1]：检查投影后的x坐标是否在图像宽度范围内
-    # 2. 深度合理性检查：
-    # depth > 0.1：确保点的深度值大于0.1米，过滤掉太近或无效的深度值
+    # Create valid mask: False if projection is invalid (out of image bounds or unreasonable depth)
+    # 1. Image boundary check:
+    # points_2d[:, 1] >= 0 and points_2d[:, 1] < image_shape[0]: check projected y in image height
+    # points_2d[:, 0] >= 0 and points_2d[:, 0] < image_shape[1]: check projected x in image width
+    # 2. Depth reasonableness check:
+    # depth > 0.1: keep points with depth larger than 0.1 meters, filter out close/invalid depth
     valid_mask = (
         (points_2d[:, 1] >= 0)
         & (points_2d[:, 1] < image_shape[0])
@@ -624,66 +623,3 @@ def get_3d_box_batch(box_size, heading_angle, center):
     corners_3d += np.expand_dims(center, -2)
     return corners_3d
 
-
-if __name__ == "__main__":
-
-    # Function for polygon ploting
-    import matplotlib
-    from matplotlib.patches import Polygon
-    from matplotlib.collections import PatchCollection
-    import matplotlib.pyplot as plt
-
-    def plot_polys(plist, scale=500.0):
-        fig, ax = plt.subplots()
-        patches = []
-        for p in plist:
-            poly = Polygon(np.array(p) / scale, True)
-            patches.append(poly)
-
-    pc = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.5)
-    colors = 100 * np.random.rand(len(patches))
-    pc.set_array(np.array(colors))
-    ax.add_collection(pc)
-    plt.show()
-
-    # Demo on ConvexHull
-    points = np.random.rand(30, 2)  # 30 random points in 2-D
-    hull = ConvexHull(points)
-    # **In 2D "volume" is is area, "area" is perimeter
-    print(("Hull area: ", hull.volume))
-    for simplex in hull.simplices:
-        print(simplex)
-
-    # Demo on convex hull overlaps
-    sub_poly = [(0, 0), (300, 0), (300, 300), (0, 300)]
-    clip_poly = [(150, 150), (300, 300), (150, 450), (0, 300)]
-    inter_poly = polygon_clip(sub_poly, clip_poly)
-    print(poly_area(np.array(inter_poly)[:, 0], np.array(inter_poly)[:, 1]))
-
-    # Test convex hull interaction function
-    rect1 = [(50, 0), (50, 300), (300, 300), (300, 0)]
-    rect2 = [(150, 150), (300, 300), (150, 450), (0, 300)]
-    plot_polys([rect1, rect2])
-    inter, area = convex_hull_intersection(rect1, rect2)
-    print((inter, area))
-    if inter is not None:
-        print(poly_area(np.array(inter)[:, 0], np.array(inter)[:, 1]))
-
-    print("------------------")
-    rect1 = [
-        (0.30026005199835404, 8.9408694211408424),
-        (-1.1571105364358421, 9.4686676477075533),
-        (0.1777082043006144, 13.154404877812102),
-        (1.6350787927348105, 12.626606651245391),
-    ]
-    rect1 = [rect1[0], rect1[3], rect1[2], rect1[1]]
-    rect2 = [
-        (0.23908745901608636, 8.8551095691132886),
-        (-1.2771419487733995, 9.4269062966181956),
-        (0.13138836963152717, 13.161896351296868),
-        (1.647617777421013, 12.590099623791961),
-    ]
-    rect2 = [rect2[0], rect2[3], rect2[2], rect2[1]]
-    plot_polys([rect1, rect2])
-    inter, area = convex_hull_intersection(rect1, rect2)
-    print((inter, area))

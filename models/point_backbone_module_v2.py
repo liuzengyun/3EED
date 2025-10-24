@@ -3,11 +3,11 @@ from easydict import EasyDict
 import torch
 import torch.nn as nn
 
-# from ..ops.pointnet2.pointnet2_batch import pointnet2_modules
 import sys
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
+sys.path.append(ROOT_DIR)
+
 from ops.teed_pointnet.pointnet2_batch import pointnet2_modules
 from pointnet2.pointnet2_modules import PointnetFPModule
 
@@ -67,8 +67,8 @@ class Point_Backbone_V2(nn.Module):
                         npoint_list=sa_config.NPOINT_LIST[k],
                         sample_range_list=sa_config.SAMPLE_RANGE_LIST[k],
                         sample_type_list=sa_config.SAMPLE_METHOD_LIST[k],
-                        radii=sa_config.RADIUS_LIST[k],
-                        nsamples=sa_config.NSAMPLE_LIST[k],
+                        radii=sa_config.RADIUS_LIST[k], # multi-radius configuration
+                        nsamples=sa_config.NSAMPLE_LIST[k],  # samples per radius
                         mlps=mlps,
                         use_xyz=True,
                         dilated_group=sa_config.DILATED_GROUP[k],

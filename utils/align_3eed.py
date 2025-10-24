@@ -84,17 +84,3 @@ def convert_points_to_virtual(points, pose, drone=False):
 
     virtual_points = convert_points_from_world(points, virtual_pose)
     return virtual_points, virtual_pose
-
-
-if __name__ == "__main__":
-
-    # ==== 示例参数 ====
-    # bbox_center = np.array([3.95, -1.34, 0.30])
-    # bbox_size = np.array([0.77, 0.73, 1.63])  # width, height, depth
-    bbox = np.array([3.95, -1.34, 0.30, 0.77, 0.73, 1.63])
-
-    # ==== 生成并保存 ====
-    bbox_mesh = create_axis_aligned_bbox_with_cylindrical_edges(bbox_center, bbox_size, radius=0.02, color_rgb=(0, 180, 139))
-    o3d.io.write_triangle_mesh("/home/rongl/code/3eed/converted_ply/bbox_axis_aligned_cylinder_edges.ply", bbox_mesh)
-
-    print("✅ 保存为 'bbox_axis_aligned_cylinder_edges.ply'")

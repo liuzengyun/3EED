@@ -176,3 +176,15 @@ data/refer_it_3d/
 *.ply
 error_frames_m3ed-*.txt
 visualization/
+data/3eed_merge/
+data/3eed/
+data/3eed_labeled_v7/
+vis_debug/
+data/3eed_merge
+3eed_logs
+error_frames_waymo.txt
+.gitignore
+data/3eed_labeled_v7
+data/3eed
+butd_logs
+.vscode

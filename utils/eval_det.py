@@ -4,22 +4,6 @@
 # Licensed under the MIT License.
 # ------------------------------------------------------------------------
 
-"""Generic Code for Object Detection Evaluation
-
-Input:
-For each class:
-    For each image:
-        Predictions: box, score
-        Groundtruths: box
-
-Output:
-For each class:
-    precision-recal and average precision
-
-Author: Charles R. Qi
-
-Ref: https://raw.githubusercontent.com/rbgirshick/py-faster-rcnn/master/lib/datasets/voc_eval.py
-"""
 import numpy as np
 import torch
 import ipdb
@@ -683,16 +667,18 @@ def eval_grounding(pred_all, gt_all, ovthresh=0.25):
 
 def bbox_7d9d_to_corners(bbox):
     """
-    将 7/9 维 bbox 转换为 8 个角点 (带旋转)
-    
+    Convert 7/9D bbox to 8 corners (supports full 3D rotation)
+
     Args:
-        bbox: (N, 7) 或 (N, 9) - [x, y, z, l, w, h, yaw] 或 [x, y, z, l, w, h, yaw, pitch, roll]
-              或 (7,) 或 (9,) - 单个 bbox
-              坐标系：X-前后(l), Y-左右(w), Z-上下(h), yaw绕Z轴旋转
-    
+        bbox: (N, 7) or (N, 9) - [x, y, z, l, w, h, yaw] or [x, y, z, l, w, h, yaw, pitch, roll]
+              or (7,) or (9,) - a single bbox
+              Coordinate system: X-forward/backward(l), Y-left/right(w), Z-up/down(h)
+              Rotations: yaw (around Z axis), pitch (around Y axis), roll (around X axis)
+              Rotation order: Rz * Ry * Rx
+
     Returns:
-        corners: (N, 8, 3) 或 (8, 3) - 8 个角点坐标
-                 前4个点: Z=h/2 (上层), 后4个点: Z=-h/2 (下层)
+        corners: (N, 8, 3) or (8, 3) - coordinates of 8 corners
+                 First 4 points: Z=h/2 (top layer), last 4 points: Z=-h/2 (bottom layer)
     """
     
     is_numpy = isinstance(bbox, np.ndarray)
@@ -701,45 +687,86 @@ def bbox_7d9d_to_corners(bbox):
     if is_numpy:
         bbox = torch.from_numpy(bbox).float()
     
-    # 处理单个 bbox
+    # Handle single bbox
     single_bbox = False
     if bbox.ndim == 1:
         bbox = bbox.unsqueeze(0)
         single_bbox = True
     
-    # 提取参数
+    # Extract parameters
     x, y, z = bbox[:, 0], bbox[:, 1], bbox[:, 2]
     l, w, h = bbox[:, 3], bbox[:, 4], bbox[:, 5]
     yaw = bbox[:, 6]
     
-    # 目前只考虑 yaw 旋转
+    # Handle pitch and roll (for 9D bbox)
+    if bbox.shape[1] >= 8:
+        pitch = bbox[:, 7] if bbox.shape[1] >= 8 else torch.zeros_like(yaw)
+        roll = bbox[:, 8] if bbox.shape[1] >= 9 else torch.zeros_like(yaw)
+    else:
+        pitch = torch.zeros_like(yaw)
+        roll = torch.zeros_like(yaw)
+    
     N = bbox.shape[0]
     
-    # 8 个角点的局部坐标（在物体坐标系中）
-    # 参考 conver_box2d 的实现：
-    # X方向: ±l/2, Y方向: ±w/2, Z方向: ±h/2
-    # 前4个点(索引0-3): Z=h/2 (上层)
-    # 后4个点(索引4-7): Z=-h/2 (下层)
+    # Local coordinates of 8 corners (in the object coordinate system)
+    # X: ±l/2, Y: ±w/2, Z: ±h/2
+    # First 4 points (index 0-3): Z = h/2 (top layer)
+    # Last 4 points (index 4-7): Z = -h/2 (bottom layer)
     x_corners = torch.stack([l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2], dim=1)  # (N, 8)
     y_corners = torch.stack([w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2], dim=1)  # (N, 8)
     z_corners = torch.stack([h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2], dim=1)  # (N, 8)
     
-    # 旋转矩阵（绕 Z 轴，即 yaw）rotz
-    # R = [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
-    cos_yaw = torch.cos(yaw).unsqueeze(1)  # (N, 1)
-    sin_yaw = torch.sin(yaw).unsqueeze(1)  # (N, 1)
+    # Stack corners to shape (N, 8, 3)
+    corners_local = torch.stack([x_corners, y_corners, z_corners], dim=-1)  # (N, 8, 3)
     
-    # 应用旋转
-    x_rot = cos_yaw * x_corners - sin_yaw * y_corners
-    y_rot = sin_yaw * x_corners + cos_yaw * y_corners
-    z_rot = z_corners
+    # Build full 3D rotation matrix: R = Rz(yaw) * Ry(pitch) * Rx(roll)
+    # Rz: rotate around Z axis (yaw)
+    cos_yaw = torch.cos(yaw)
+    sin_yaw = torch.sin(yaw)
+    Rz = torch.zeros(N, 3, 3).to(bbox.device)
+    Rz[:, 0, 0] = cos_yaw
+    Rz[:, 0, 1] = -sin_yaw
+    Rz[:, 1, 0] = sin_yaw
+    Rz[:, 1, 1] = cos_yaw
+    Rz[:, 2, 2] = 1
     
-    # 平移到世界坐标系
+    # Ry: rotate around Y axis (pitch)
+    cos_pitch = torch.cos(pitch)
+    sin_pitch = torch.sin(pitch)
+    Ry = torch.zeros(N, 3, 3).to(bbox.device)
+    Ry[:, 0, 0] = cos_pitch
+    Ry[:, 0, 2] = sin_pitch
+    Ry[:, 1, 1] = 1
+    Ry[:, 2, 0] = -sin_pitch
+    Ry[:, 2, 2] = cos_pitch
+    
+    # Rx: rotate around X axis (roll)
+    cos_roll = torch.cos(roll)
+    sin_roll = torch.sin(roll)
+    Rx = torch.zeros(N, 3, 3).to(bbox.device)
+    Rx[:, 0, 0] = 1
+    Rx[:, 1, 1] = cos_roll
+    Rx[:, 1, 2] = -sin_roll
+    Rx[:, 2, 1] = sin_roll
+    Rx[:, 2, 2] = cos_roll
+    
+    # Compose rotation matrix: R = Rz * Ry * Rx
+    R = torch.bmm(Rz, torch.bmm(Ry, Rx))  # (N, 3, 3)
+    
+    # Apply rotation: corners_rotated = corners_local @ R^T
+    corners_rotated = torch.bmm(corners_local, R.transpose(1, 2))  # (N, 8, 3)
+    
+    # Extract rotated coordinates
+    x_rot = corners_rotated[..., 0]
+    y_rot = corners_rotated[..., 1]
+    z_rot = corners_rotated[..., 2]
+    
+    # Translate to world coordinates
     x_global = x_rot + x.unsqueeze(1)
     y_global = y_rot + y.unsqueeze(1)
     z_global = z_rot + z.unsqueeze(1)
     
-    # 组合为角点 (N, 8, 3)
+    # Combine into corners (N, 8, 3)
     corners = torch.stack([x_global, y_global, z_global], dim=-1)
     
     if single_bbox:
@@ -753,46 +780,46 @@ def bbox_7d9d_to_corners(bbox):
 
 def bbox_6d_to_corners(bbox):
     """
-    将 6 维 axis-aligned bbox 转换为 8 个角点
-    
+    Convert 6D axis-aligned bbox to 8 corners
+
     Args:
-        bbox: (N, 6) - [cx, cy, cz, l, w, h] 或 (6,) - 单个 bbox
-              坐标系：X方向长度l, Y方向宽度w, Z方向高度h，axis-aligned无旋转
-              与 GT bbox 的前6维格式完全一致！
-    
+        bbox: (N, 6) - [cx, cy, cz, l, w, h] or (6,) - a single bbox
+              Coordinate system: length l along X, width w along Y, height h along Z, axis-aligned without rotation
+              Exactly consistent with the first 6 dims of GT bbox!
+
     Returns:
-        corners: (N, 8, 3) 或 (8, 3) - 8 个角点坐标
-                 前4个点: Z=cz+h/2 (上层), 后4个点: Z=cz-h/2 (下层)
+        corners: (N, 8, 3) or (8, 3) - coordinates of 8 corners
+                 First 4 points: Z=cz+h/2 (top layer), last 4 points: Z=cz-h/2 (bottom layer)
     """
     
     is_numpy = isinstance(bbox, np.ndarray)
     if is_numpy:
         bbox = torch.from_numpy(bbox).float()
     
-    # 处理单个 bbox
+    # Handle single bbox
     single_bbox = False
     if bbox.ndim == 1:
         bbox = bbox.unsqueeze(0)
         single_bbox = True
     
     cx, cy, cz = bbox[:, 0], bbox[:, 1], bbox[:, 2]
-    l, w, h = bbox[:, 3], bbox[:, 4], bbox[:, 5]  # 与 GT bbox 格式一致！
+    l, w, h = bbox[:, 3], bbox[:, 4], bbox[:, 5]  # Consistent with GT bbox format!
     
     N = bbox.shape[0]
     
-    # 8 个角点（axis-aligned，无旋转）
-    # 与 7/9D bbox 完全相同的角点顺序和坐标定义
-    # X方向: ±l/2, Y方向: ±w/2, Z方向: ±h/2
+    # 8 corners (axis-aligned, no rotation)
+    # Same corner ordering/definitions as 7/9D bbox
+    # X: ±l/2, Y: ±w/2, Z: ±h/2
     x_corners = torch.stack([l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2], dim=1)  # (N, 8)
     y_corners = torch.stack([w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2], dim=1)  # (N, 8)
     z_corners = torch.stack([h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2], dim=1)  # (N, 8)
     
-    # 平移到世界坐标系
+    # Translate to world coordinates
     x_global = x_corners + cx.unsqueeze(1)
     y_global = y_corners + cy.unsqueeze(1)
     z_global = z_corners + cz.unsqueeze(1)
     
-    # 组合为角点 (N, 8, 3)
+    # Combine into corners (N, 8, 3)
     corners = torch.stack([x_global, y_global, z_global], dim=-1)
     
     if single_bbox:
@@ -806,45 +833,45 @@ def bbox_6d_to_corners(bbox):
 
 def iou3d_rotated_vs_aligned(gt_bboxes_rotated, pred_bboxes_aligned):
     """
-    计算 rotated GT bbox (7/9维) 和 axis-aligned pred bbox (6维) 之间的 3D IoU
-    
+    Compute 3D IoU between rotated GT bbox (7/9D) and axis-aligned predicted bbox (6D)
+
     Args:
-        gt_bboxes_rotated: (M, 7) 或 (M, 9) - GT bboxes [x,y,z,l,w,h,yaw(,pitch,roll)]
-                           坐标系：X-前后(l), Y-左右(w), Z-上下(h)
-        pred_bboxes_aligned: (N, 6) - Pred bboxes [cx,cy,cz,l,w,h] (axis-aligned)
-                             坐标系：X-前后(l), Y-左右(w), Z-上下(h)
-                             与 GT bbox 前6维格式完全一致！
-    
+        gt_bboxes_rotated: (M, 7) or (M, 9) - GT bboxes [x,y,z,l,w,h,yaw(,pitch,roll)]
+                           Coordinate system: X-forward/backward(l), Y-left/right(w), Z-up/down(h)
+        pred_bboxes_aligned: (N, 6) - Predicted bboxes [cx,cy,cz,l,w,h] (axis-aligned)
+                             Coordinate system: X-forward/backward(l), Y-left/right(w), Z-up/down(h)
+                             Exactly consistent with the first 6 dims of GT bbox!
+
     Returns:
-        ious: (M, N) - IoU 矩阵
-        union: (M, N) - union 体积矩阵
+        ious: (M, N) - IoU matrix
+        union: (M, N) - union volume matrix
     """
     
-    # 转换为角点
+    # Convert to corners
     gt_corners = bbox_7d9d_to_corners(gt_bboxes_rotated)  # (M, 8, 3) - [X, Y, Z]
     pred_corners = bbox_6d_to_corners(pred_bboxes_aligned)  # (N, 8, 3) - [X, Y, Z]
     
-    # box3d_iou 期望坐标系为 [X, Y, Z]，其中 Y 是高度
-    # 虽然注释说"up direction is negative Y"，但代码逻辑要求 corners[0].y > corners[4].y
-    # 我们的坐标系是 [X, Y, Z]，其中 Z 是高度，corners[0-3]的Z > corners[4-7]的Z
-    # 需要将坐标重新排列：[X, Y, Z] -> [X, Z, Y]
-    # 这样 Z 变成了新的 Y（高度），保持corners[0].y > corners[4].y
+    # box3d_iou expects coordinate system [X, Y, Z] where Y is the height axis
+    # Although the comment says "up direction is negative Y", the logic requires corners[0].y > corners[4].y
+    # Our coordinate system is [X, Y, Z] with Z as height, and corners[0-3].Z > corners[4-7].Z
+    # We need to reorder coordinates: [X, Y, Z] -> [X, Z, Y]
+    # So Z becomes the new Y (height), keeping corners[0].y > corners[4].y
     gt_corners_reorder = torch.stack([
-        gt_corners[..., 0],  # X 保持不变
-        gt_corners[..., 2],  # 新的Y = Z（Z是高度）
-        gt_corners[..., 1],  # 新的Z = Y
+        gt_corners[..., 0],  # X unchanged
+        gt_corners[..., 2],  # new Y = Z (Z is height)
+        gt_corners[..., 1],  # new Z = Y
     ], dim=-1)
     
     pred_corners_reorder = torch.stack([
-        pred_corners[..., 0],  # X 保持不变
-        pred_corners[..., 2],  # 新的Y = Z
-        pred_corners[..., 1],  # 新的Z = Y
+        pred_corners[..., 0],  # X unchanged
+        pred_corners[..., 2],  # new Y = Z
+        pred_corners[..., 1],  # new Z = Y
     ], dim=-1)
     
     M = gt_corners_reorder.shape[0]
     N = pred_corners_reorder.shape[0]
     
-    # 使用现有的 box3d_iou 函数
+    # Use existing box3d_iou function
     ious = torch.zeros(M, N).to(gt_corners.device)
     
     for i in range(M):
@@ -856,10 +883,10 @@ def iou3d_rotated_vs_aligned(gt_bboxes_rotated, pred_bboxes_aligned):
                 )
                 ious[i, j] = iou3d
             except:
-                # 如果计算失败，设为 0
+                # If computation fails, set to 0
                 ious[i, j] = 0.0
     
-    # union 可以近似计算（如果需要精确值，需要修改 box3d_iou 返回）
+    # union can be approximated (for exact value, modify box3d_iou return)
     union = None
     
     return ious, union

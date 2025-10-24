@@ -1,19 +1,12 @@
-# ------------------------------------------------------------------------
-# BEAUTY DETR
-# Copyright (c) 2022 Ayush Jain & Nikolaos Gkanatsios
-# Licensed under CC-BY-NC [see LICENSE for details]
-# All Rights Reserved
-# ------------------------------------------------------------------------
-"""Dataset and data loader for ReferIt3D."""
-
 # ==================== Imports ====================
+from cgi import print_arguments
 from collections import defaultdict
 import json
 import multiprocessing as mp
 import os
 import shutil
 import re
-
+import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -21,12 +14,13 @@ from transformers import RobertaTokenizerFast
 import open3d as o3d
 from tqdm import tqdm
 
-from utils.align_3eed import convert_boxes_from_n_to_vir, convert_points_to_virtual
-from utils.visual import create_rotated_bbox_with_cylindrical_edges, save_as_ply  # create_axis_aligned_bbox_with_cylindrical_edges
+# from utils.align_3eed import convert_boxes_from_n_to_vir, convert_points_to_virtual
+# from utils.visual import create_rotated_bbox_with_cylindrical_edges, save_as_ply  # create_axis_aligned_bbox_with_cylindrical_edges
 from utils.transform_waymo import transform_to_front_view
-from utils.pcds_in_bbox import get_points_in_bbox
+# from utils.pcds_in_bbox import get_points_in_bbox
 from ops.teed_pointnet.roiaware_pool3d.roiaware_pool3d_utils import points_in_boxes_cpu
-
+from utils.box_util import extract_points_in_bbox_3d, project_points_to_2d, draw_points_on_image, conver_box2d, draw_projected_box3d
+from PIL import Image
 import pickle
 import ipdb
 # ==================== Constants ====================
@@ -44,12 +38,16 @@ CLASS_MAPPINGS = {
 
 # Waymo dataset synonyms
 WAYMO_SYNONYMS = {
-    "car": ["car", "vehicle", "sedan", "van", "coupe", "automobile", "convertible", "hatchback", "SUV"],
-    "truck": ["truck", "lorry", "freight", "pickup truck", "delivery truck", "cargo truck", "semi-truck"],
+    "car": ["car", "vehicle", "sedan", "van", "coupe", "automobile", "convertible", "hatchback", "SUV", 
+            "pickup truck", "pickup", "minivan", "taxi", "cab", "utility truck", "delivery truck",
+            "CR-V", "Corolla", "Tundra", "Camry", "Civic", "Accord"],
+    "truck": ["truck", "lorry", "freight", "cargo truck", "semi-truck", "flatbed truck", 
+              "concrete mixer truck", "mixer truck", "cement truck"],
     "bus": ["bus", "coach", "minibus", "shuttle", "school bus", "public transport"],
-    "othervehicle": ["vehicle", "van", "pickup", "minivan", "jeep", "SUV", "tractor", "trailer"],
-    "pedestrian": ["pedestrian", "person", "man", "woman", "people", "child", "boy", "girl", "adult", "passerby", "walker"],
-    "cyclist": ["cyclist", "biker", "bike rider", "rider"],
+    "othervehicle": ["vehicle", "jeep", "tractor", "trailer", "machinery"],
+    "pedestrian": ["pedestrian", "person", "man", "woman", "people", "child", "boy", "girl", "adult", 
+                   "passerby", "walker", "worker", "individual", "guy", "lady"],
+    "cyclist": ["cyclist", "biker", "bike rider", "rider", "bicycle", "bike", "person riding"],
 }
 
 # M3ED dataset synonyms
@@ -174,7 +172,7 @@ class Joint3DDataset(Dataset):
     def _log_error(self, message, class_names=None, dataset=None):
         """Log error messages to appropriate files."""
         if class_names is not None:
-            with open("log.txt", "a") as f:
+            with open("3eed/log.txt", "a") as f:
                 f.write(f"match failed: {message}\n")
                 f.write(f"class name: {class_names}\n\n")
         if dataset is not None:
@@ -277,7 +275,7 @@ class Joint3DDataset(Dataset):
                 continue
             # caption
             tokenized = self.tokenizer.batch_encode_plus([self._format_caption(utterance)], padding="longest", return_tensors="pt")
-            gt_map = get_positive_map(tokenized, all_positive)  # MARK 多目标的 positive map
+            gt_map = get_positive_map(tokenized, all_positive)  # MARK positive map for multi-object
             anno_dict = {
                 "scan_id": frame_key,
                 "utterance": utterance,
@@ -314,6 +312,8 @@ class Joint3DDataset(Dataset):
 
         # Load sequence list from split file
         split_file = os.path.join(self.split_dir, f"{dataset}_{split}.txt")
+        assert os.path.exists(split_file), f"split file not found: {split_file}"
+        
         with open(split_file) as f:
             sequence_list = [line.rstrip() for line in f]
 
@@ -334,8 +334,9 @@ class Joint3DDataset(Dataset):
             image_path = self._get_frame_paths(frame_path, dataset)["image"]
             lidar_path = self._get_frame_paths(frame_path, dataset)["lidar"]
             meta_path = self._get_frame_paths(frame_path, dataset)["meta"]
-            if not os.path.exists(meta_path):
-                continue
+            # if not os.path.exists(meta_path):
+                # continue
+            assert os.path.exists(meta_path), f"meta path not found: {meta_path}"
 
             # Load metadata
             with open(meta_path) as f:
@@ -346,16 +347,8 @@ class Joint3DDataset(Dataset):
                 class_set.add(obj["class"].lower())  # Add class to set for statistics
 
                 # Get positive map
-                # try:
                 utterance = obj["caption"]
-                # except:
-                #     # Log error frame information
-                #     self._log_error(f"{frame_name} | obj: {obj}", class_names=[obj["class"].lower()], dataset=dataset)
-                #     continue
-
-                # Process utterance based on dataset type
-                # utterance = self._process_utterance(utterance, dataset)
-
+                
                 cat_names = obj["class"].lower()
 
                 caption = self._format_caption(utterance)
@@ -374,12 +367,14 @@ class Joint3DDataset(Dataset):
                     matched_cls = positions[0][2]  # e.g. van
                 else:
                     # Log failed matches
-                    self._log_error(f"match failed: {utterance}", class_names=[cat_names], dataset=dataset)
+                    # self._log_error(f"match failed: {utterance}", class_names=[cat_names], dataset=dataset)
                     continue
 
                 tokenized = self.tokenizer.batch_encode_plus([self._format_caption(utterance)], padding="longest", return_tensors="pt")
                 gt_map = get_positive_map(tokenized, [tokens_positive])
 
+                # ipdb.set_trace()
+                
                 bbox_3d = obj["bbox_3d"]
                 annos.append(
                     {
@@ -393,8 +388,10 @@ class Joint3DDataset(Dataset):
                         "pcd_path": lidar_path,
                         "image_path": image_path,
                         "gt_bbox": bbox_3d,
-                        "bbox_2d": obj["bbox_2d_proj"],
+                        # "bbox_2d": obj["bbox_2d_proj"],
                         "pose": meta["pose"],
+                        'image_extrinsic': meta['image_extrinsic'],
+                        'image_intrinsic': meta['image_intrinsic'],
                     }
                 )
 
@@ -408,7 +405,7 @@ class Joint3DDataset(Dataset):
         pcd = np.fromfile(pcd_path, dtype=np.float32).reshape(-1, 4) if pcd_path.endswith(".bin") else np.load(pcd_path)
 
         N = pcd.shape[0]
-        TARGET_NUM_POINTS = 16384
+        TARGET_NUM_POINTS = 16384 # 13,321
 
         if N >= TARGET_NUM_POINTS:  # Random downsampling
             indices = np.random.choice(N, TARGET_NUM_POINTS, replace=False)
@@ -424,30 +421,14 @@ class Joint3DDataset(Dataset):
             # reflectance_3d = np.tanh(np.concatenate([pcd[:, 3:5], pcd[:, 3].reshape(-1, 1)], axis=1))  # (n_p, 3)
             reflectance = np.tanh(reflectance)
 
-        elif anno["dataset"] == "quad":
-            # pass
-            xyz, pose = convert_points_to_virtual(xyz, pose=np.asarray(anno["pose"]), drone=False)
-            anno["pose"] = pose
+        # elif anno["dataset"] == "quad":
+        #     # pass
+        #     xyz, pose = convert_points_to_virtual(xyz, pose=np.asarray(anno["pose"]), drone=False)
+        #     anno["pose"] = pose
 
-        elif anno["dataset"] == "drone":
-            xyz[:, 2] += 1.8  # NOTE drone dataset's z coordinate needs to be subtracted by 1.8 three platforms can be horizontally aligned
-            # pass
-            xyz, pose = convert_points_to_virtual(xyz, pose=np.asarray(anno["pose"]), drone=True)
-            anno["pose"] = pose
-
-        if self.visualize:
-            save_pcd_name = f"{self.vis_save_dir}/{anno['scan_id']}_{anno['dataset']}_pcd.ply"
-            save_dir = os.path.dirname(save_pcd_name)
-            os.makedirs(save_dir, exist_ok=True)
-            # Copy image cp to this path
-            image_path = anno["image_path"]
-            meta_path = anno["meta_path"]
-            image_name = os.path.basename(image_path)
-            meta_name = os.path.basename(meta_path)
-            shutil.copyfile(image_path, save_pcd_name.replace("_pcd.ply", ".jpg"))
-            shutil.copyfile(meta_path, save_pcd_name.replace("_pcd.ply", ".json"))
-            save_as_ply(xyz, reflectance, save_path=f"{self.vis_save_dir}/{anno['scan_id']}_{anno['dataset']}_pcd.ply")
-
+        if anno["dataset"] == "drone":
+            xyz[:, 2] += 1.8  # NOTE drone dataset's z coordinate is lower
+     
         reflectance = reflectance - 0.5  # self.mean_rgb[0] # from [0, 1] to [-1, 1]
         point_cloud = np.concatenate([xyz, reflectance], axis=1)
 
@@ -494,47 +475,78 @@ class Joint3DDataset(Dataset):
     def _get_3eed_target_boxes(self, anno, xyz):
         """Return gt boxes to detect."""
 
-        tids = [anno["target_id"]]  # waymo doesn't need to predict id
+        tids = [anno["target_id"]]  
 
         # Generate instance label, default -1 (unmarked), if 3D point belongs to a target object, fill in target object ID
         xyz = xyz[:, :3]
         point_instance_label = -np.ones(len(xyz))
         # Find points inside bbox and mark as 0
-
+        
         # Generate axis_align_bbox for 3D object
-        bbox = np.array(anno["gt_bbox"])[None, :7]
-
-        # mask = get_points_in_bbox(xyz, bbox[:3], bbox[3:6], bbox[6])
-        # point_instance_label[mask] = 0
-        point_indices = points_in_boxes_cpu(torch.from_numpy(xyz), torch.from_numpy(bbox)).numpy()
-        point_instance_label[point_indices[0]] = 0
-
+        bbox = np.array(anno["gt_bbox"])#.reshape(-1)
+        
+        # ⭐ Add 1.8m to drone bbox to match point cloud height
         if anno["dataset"] == "drone":
-            bbox = bbox.reshape(-1)
-            bbox[2] += 1.8
-            bbox = convert_boxes_from_n_to_vir(bbox, anno["pose"], drone=True)
-        elif anno["dataset"] == "quad":
-            bbox = convert_boxes_from_n_to_vir(bbox, anno["pose"], drone=False)
+            bbox[2] += 1.8  
+        
+        if anno["dataset"] == "waymo":
+            assert len(bbox) == 7
+            # bbox = np.array(anno["gt_bbox"])[None, :7]
+        else:
+            assert len(bbox) == 9
+            # bbox = np.array(anno["gt_bbox"])[None, :9]
+
+        # Use adjusted bbox to extract points (now xyz and bbox height match)
+        points_in_bbox, point_mask = extract_points_in_bbox_3d(
+            xyz, bbox[:7]
+        )  
+        point_instance_label[point_mask] = 0
+        
+        # # NOTE Visual sanity check
+        if self.visualize:
+            print(f"    Found {len(points_in_bbox)} points inside 3D bbox")
+            img_path = anno["image_path"]
+            image = Image.open(img_path)
+            
+            # Project point cloud onto 2D image
+            points_2d, depth, valid_mask = project_points_to_2d(
+                points_in_bbox[:, :3], image.size, anno
+            )
+            proj_pcd_image, mask = draw_points_on_image(
+                image, points_2d, color=(0, 255, 0), radius=3, create_mask=True
+            )
+            save_path = os.path.join(
+                './vis_debug', anno['scan_id'], f"proj_pcd.jpg"
+            )
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            cv2.imwrite(save_path, proj_pcd_image)
+            print(f"    Projected point cloud image saved: {save_path}") 
+            
+            ipdb.set_trace()
+            
+            # Project 3D bbox onto 2D image
+            bbox_3d_corners, _ = conver_box2d(bbox, image.size, anno)
+            contour_color = (0, 0, 255) 
+            img_with_3d_bbox = draw_projected_box3d(
+                image,
+                bbox_3d_corners[0],
+                color=contour_color,
+                thickness=2)
+            # save image
+            save_path = os.path.join(
+                './vis_debug', anno['scan_id'], f"proj_bbox.jpg"
+            )
+            cv2.imwrite(save_path, img_with_3d_bbox)
+            print(f"    3D bbox image saved: {save_path}")
 
         bbox = bbox.reshape(-1)
-        bbox = bbox[:7]
 
-        ipdb.set_trace()
-        # TODO check 一下，这里的逻辑是不是 前 N 个填入真实的 bbox
         # Generate axis_align_bbox for 3D object
         bboxes = np.zeros((MAX_NUM_OBJ, 7))
-        bboxes[: len(tids)] = bbox[:7]  # shape: (N, 6) # 前 N 个填入真实的 bbox
+        bboxes[: len(tids)] = bbox[:7]  # shape: (N, 6) # The first N are real bboxes
 
-        bboxes[len(tids) :, :3] = 1000  # 后 MAX_NUM_OBJ - N 个填入 1000，表示无目标
         box_label_mask = np.zeros(MAX_NUM_OBJ)
-        box_label_mask[: len(tids)] = 1  # 标记前 N 个是有效的
-
-        # Generate axis_align_bbox for debug
-        if self.visualize:
-            # bbox_mesh = create_axis_aligned_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 180, 139))
-            bbox_mesh = create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 180, 139))
-            o3d.io.write_triangle_mesh(f"{self.vis_save_dir}/{anno['scan_id']}_{anno['dataset']}_bbox.ply", bbox_mesh)
-            print(f"{self.vis_save_dir}/{anno['scan_id']}_{anno['dataset']}_bbox.ply")
+        box_label_mask[: len(tids)] = 1  # Mark first N as valid
 
         return bboxes, box_label_mask, point_instance_label
 
@@ -544,7 +556,7 @@ class Joint3DDataset(Dataset):
         tids = boxes_info["class_id"]
         gt_bbox = np.stack(boxes_info["bbox3d"], axis=0).astype(np.float32)  # shape: (N, 7)
         xyz = xyz[:, :3]
-        point_instance_label = -np.ones(len(xyz))  # 找到 bbox 之内的点，并标记为 0
+        point_instance_label = -np.ones(len(xyz))  # Points inside bbox are marked 0
 
         point_indices = points_in_boxes_cpu(torch.from_numpy(xyz), torch.from_numpy(gt_bbox)).numpy()
         for i in range(gt_bbox.shape[0]):
@@ -555,9 +567,9 @@ class Joint3DDataset(Dataset):
         bboxes = np.zeros((MAX_NUM_OBJ, 7))
         bboxes[: len(tids)] = gt_bbox[:, :7]  # shape: (N, 6)
 
-        bboxes[len(tids) :, :3] = 1000  # 填充 无目标的 bbox # 前 len(tids) 个是真实目标，其余为 padding。
+        bboxes[len(tids) :, :3] = 1000  # Pad non-target bboxes; first len(tids) are real targets
         box_label_mask = np.zeros(MAX_NUM_OBJ)
-        box_label_mask[: len(tids)] = 1  # 标记 哪些 bbox 是有效的
+        box_label_mask[: len(tids)] = 1  # Mark which bboxes are valid
 
         return bboxes, box_label_mask, point_instance_label
 
@@ -692,16 +704,12 @@ class Joint3DDataset(Dataset):
         # Point cloud representation
         point_cloud = self._get_3eed_pcd(anno)
         gt_bboxes, box_label_mask, point_instance_label = self._get_3eed_target_boxes(anno, point_cloud)
-        ipdb.set_trace()
         
-        if anno["dataset"] == "waymo":
-            assert gt_bboxes.shape[-1] == 7
-        else:
-            assert gt_bboxes.shape[-1] == 9
+        # ipdb.set_trace()
         
         if anno["dataset"] == "waymo":
             lidar_id = int(anno["scan_id"].split("_")[-1])
-            xyz = point_cloud[:, :3]
+            xyz = point_cloud[:, :3] # (n_p, 3)
             WAYMO_VIEWS = ["F", "FL", "FR", "SL", "SR"]
             xyz, target_box = transform_to_front_view(xyz, gt_bboxes[0][None, :], WAYMO_VIEWS[lidar_id])
             point_cloud[:, :3] = xyz
@@ -719,7 +727,7 @@ class Joint3DDataset(Dataset):
             "center_label": gt_bboxes[:, :3].astype(np.float32),  # xyz
             "sem_cls_label": _labels.astype(np.int64),  # NOTE Used in loss calculation
             "size_gts": gt_bboxes[:, 3:6].astype(np.float32),  # NOTE w h d
-            "gt_bboxes": gt_bboxes[0].astype(np.float32),
+            "gt_bboxes": gt_bboxes.astype(np.float32), # NOTE shape: (N, 9) 
             "meta_path": anno["meta_path"],
             "point_clouds": point_cloud.astype(np.float32),
             "utterances": (" ".join(anno["utterance"].replace(",", " ,").split()) + " . not mentioned"),

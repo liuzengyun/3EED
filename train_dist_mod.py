@@ -1,13 +1,3 @@
-# ------------------------------------------------------------------------
-# BEAUTY DETR
-# Copyright (c) 2022 Ayush Jain & Nikolaos Gkanatsios
-# Licensed under CC-BY-NC [see LICENSE for details]
-# All Rights Reserved
-# ------------------------------------------------------------------------
-# Parts adapted from Group-Free
-# Copyright (c) 2021 Ze Liu. All Rights Reserved.
-# Licensed under the MIT License.
-# ------------------------------------------------------------------------
 """Main script for language modulation."""
 
 import os
@@ -46,24 +36,29 @@ class TrainTester(BaseTrainTester):
         test_dataset = {}
         for d in args.test_dataset:
             test_dataset[d] = 1
-            
-        train_dataset = Joint3DDataset(
-            dataset_dict=dataset_dict,
-            test_dataset=test_dataset,
-            split="train", 
-            use_color=args.use_color,
-            use_height=args.use_height,
-            overfit=args.debug,
-            data_path=args.data_root,
-            split_dir=args.split_dir,
-            detect_intermediate=args.detect_intermediate,
-            use_multiview=args.use_multiview,
-            butd=args.butd,
-            butd_gt=args.butd_gt,
-            butd_cls=args.butd_cls,
-            augment_det=args.augment_det,
-            debug=args.debug,
-        )
+        
+        # Only load training dataset if not in eval mode
+        if args.eval:
+            train_dataset = None
+        else:
+            train_dataset = Joint3DDataset(
+                dataset_dict=dataset_dict,
+                test_dataset=test_dataset,
+                split="train", 
+                use_color=args.use_color,
+                use_height=args.use_height,
+                overfit=args.debug,
+                data_path=args.data_root,
+                split_dir=args.split_dir,
+                detect_intermediate=args.detect_intermediate,
+                use_multiview=args.use_multiview,
+                butd=args.butd,
+                butd_gt=args.butd_gt,
+                butd_cls=args.butd_cls,
+                augment_det=args.augment_det,
+                debug=args.debug,
+            )
+        
         test_dataset = Joint3DDataset(
             dataset_dict=dataset_dict,
             test_dataset=test_dataset,
@@ -113,9 +108,6 @@ class TrainTester(BaseTrainTester):
         return {
             "point_clouds": batch_data["point_clouds"].float(),
             "text": batch_data["utterances"],
-            # "det_boxes": batch_data["all_detected_boxes"],  # TODO: Check if this is only for butd
-            # "det_bbox_label_mask": batch_data["all_detected_bbox_label_mask"],  # For butd?
-            # "det_class_ids": batch_data["all_detected_class_ids"],  # For butd?
         }
 
     @torch.no_grad()
@@ -289,7 +281,7 @@ class TrainTester(BaseTrainTester):
 if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     opt = parse_option()
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))  # Changed this to enable debugging in PyCharm
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))  
     print(f"\n\nlocal_rank: {local_rank}")
 
     torch.cuda.set_device(local_rank)
@@ -300,16 +292,3 @@ if __name__ == "__main__":
 
     train_tester = TrainTester(opt)
     ckpt_path = train_tester.main(opt)
-
-    ##########################################
-
-    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    # opt = parse_option()
-    # torch.cuda.set_device(opt.local_rank)
-    # torch.distributed.init_process_group(backend="nccl", init_method="env://")
-    # torch.backends.cudnn.enabled = True
-    # torch.backends.cudnn.benchmark = True
-    # torch.backends.cudnn.deterministic = True
-
-    # train_tester = TrainTester(opt)
-    # ckpt_path = train_tester.main(opt)

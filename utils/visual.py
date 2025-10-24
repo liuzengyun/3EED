@@ -37,7 +37,7 @@ def visualize_3eed_pointcloud_with_bbox(xyz, point_instance_label, save_path="./
 
 
 def save_as_ply(pc, intensity, save_path):
-    # 使用距离渐变颜色而不是强度
+    # Use distance-based gradient colors instead of intensity
     colors = compute_distance_colors(pc)
 
     pcd = o3d.geometry.PointCloud()
@@ -53,27 +53,27 @@ def save_as_ply(pc, intensity, save_path):
 
 
 def compute_distance_colors(points):
-    """根据点距离的远近计算渐变颜色（蓝->绿->红）"""
-    # 计算每个点到原点的距离
+    """Compute gradient colors by distance (blue->green->red)."""
+    # Compute distance of each point to origin
     distances = np.linalg.norm(points, axis=1)
     min_dist, max_dist = np.min(distances), np.max(distances)
 
-    # 归一化距离到[0,1]
+    # Normalize distance to [0,1]
     normalized_dist = (distances - min_dist) / (max_dist - min_dist + 1e-5)
 
-    # 创建颜色渐变：远距离(0.0)->蓝色，中距离(0.5)->绿色，近距离(1.0)->红色
+    # Create color gradient: far(0.0)->blue, mid(0.5)->green, near(1.0)->red
     colors = np.zeros((points.shape[0], 3))
 
-    # 分段线性插值
-    mask1 = normalized_dist <= 0.3  # 蓝到绿的部分
-    mask2 = normalized_dist > 0.3  # 绿到红的部分
+    # Piecewise linear interpolation
+    mask1 = normalized_dist <= 0.3  # blue->green region
+    mask2 = normalized_dist > 0.3  # green->red region
 
-    # 蓝->绿渐变
-    t = normalized_dist[mask1] * 2  # 映射到[0,1]
+    # Blue->Green
+    t = normalized_dist[mask1] * 2  # map to [0,1]
     colors[mask1] = (1 - t)[:, np.newaxis] * COLOR_BLUE + t[:, np.newaxis] * COLOR_GREEN
 
-    # 绿->红渐变
-    t = (normalized_dist[mask2] - 0.5) * 2  # 映射到[0,1]
+    # Green->Red
+    t = (normalized_dist[mask2] - 0.5) * 2  # map to [0,1]
     colors[mask2] = (1 - t)[:, np.newaxis] * COLOR_GREEN + t[:, np.newaxis] * COLOR_RED
 
     return colors
@@ -102,7 +102,7 @@ def create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 
     w, h, d = size
     half = np.array([w, h, d]) / 2
 
-    # 8 个顶点（局部坐标轴对齐）
+    # 8 vertices (axis-aligned in local coordinates)
     signs = np.array(
         [
             [-1, -1, -1],
@@ -117,7 +117,7 @@ def create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 
     )
     vertices = signs * half
 
-    # 创建绕z轴旋转的旋转矩阵
+    # Create rotation matrix around z-axis
     cos_rot = np.cos(rotation_z)
     sin_rot = np.sin(rotation_z)
     rot_matrix = np.array([
@@ -126,28 +126,28 @@ def create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 
         [0, 0, 1]
     ])
 
-    # 应用旋转
+    # Apply rotation
     vertices = np.dot(vertices, rot_matrix.T)
-    # 平移到中心点
+    # Translate to center
     vertices = vertices + center
 
-    # 12 条边连接索引
+    # 12 edge connections
     edges = [
         (0, 1),
         (1, 2),
         (2, 3),
-        (3, 0),  # 底面
+        (3, 0),  # bottom face
         (4, 5),
         (5, 6),
         (6, 7),
-        (7, 4),  # 顶面
+        (7, 4),  # top face
         (0, 4),
         (1, 5),
         (2, 6),
-        (3, 7),  # 垂直边
+        (3, 7),  # vertical edge
     ]
 
-    # 颜色归一化
+    # Normalize color
     color = np.array(color_rgb) / 255.0
 
     cylinders = []
@@ -159,11 +159,11 @@ def create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 
         if height < 1e-6:
             continue
 
-        # 创建沿 z 轴的圆柱
+        # Create cylinder along z-axis
         cyl = o3d.geometry.TriangleMesh.create_cylinder(radius=radius, height=height)
         cyl.paint_uniform_color(color)
 
-        # 旋转圆柱到边的方向
+        # Rotate cylinder to edge direction
         direction = vec / height
         z_axis = np.array([0, 0, 1])
         axis = np.cross(z_axis, direction)
@@ -172,11 +172,11 @@ def create_rotated_bbox_with_cylindrical_edges(bbox, radius=0.02, color_rgb=(0, 
             rot = o3d.geometry.get_rotation_matrix_from_axis_angle(axis / np.linalg.norm(axis) * angle)
             cyl.rotate(rot, center=(0, 0, 0))
 
-        # 平移到边中心
+        # Translate to edge center
         cyl.translate((p1 + p2) / 2)
         cylinders.append(cyl)
 
-    # 合并所有圆柱体为一个 Mesh
+    # Merge all cylinders into one mesh
     bbox_mesh = cylinders[0]
     for c in cylinders[1:]:
         bbox_mesh += c

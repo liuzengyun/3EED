@@ -2,14 +2,34 @@
 <h1 align="center">3EED: Ground Everything Everywhere in 3D</h1>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10%7C3.11-blue" />
+  <img src="https://img.shields.io/badge/CUDA-11.1%20%7C%2012.4-informational" />
+  <img src="https://img.shields.io/github/stars/iris0329/3eed?style=social" />
+  <img src="https://img.shields.io/github/last-commit/iris0329/3eed" />
+  <a href="https://huggingface.co/datasets/RRRong/3EED/"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
+</p>
+
+<p align="center">
+  <strong>A large-scale cross-platform (vehicle/drone/quadruped), multi-modal (RGB+LiDAR+language) 3D visual grounding benchmark</strong>
+</p>
+
+<p align="center">
+  <a href="#-highlights">Highlights</a> •
+  <a href="#-news">News</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-dataset">Dataset</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-citation">Citation</a>
+</p>
+
+<p align="center">
   <strong>Rong Li</strong><sup>1,*</sup>,
   <strong>Yuhao Dong</strong><sup>2,*</sup>,
   <strong>Tianshuai Hu</strong><sup>3,*</sup>,
   <strong>Ao Liang</strong><sup>4,*</sup>,
   <strong>Youquan Liu</strong><sup>5,*</sup>,
-  <strong>Dongyue Lu</strong><sup>4,*</sup>
-</p>
-<p align="center">
+  <strong>Dongyue Lu</strong><sup>4,*</sup><br>
   <strong>Liang Pan</strong><sup>6</sup>,
   <strong>Lingdong Kong</strong><sup>4†</sup>,
   <strong>Junwei Liang</strong><sup>1,3‡</sup>,
@@ -17,175 +37,297 @@
 </p>
 
 <p align="center">
-  <sup>1</sup>HKUST(GZ), 
-  <sup>2</sup>NTU, 
-  <sup>3</sup>HKUST, 
-  <sup>4</sup>NUS, 
-  <sup>5</sup>FDU, 
-  <sup>6</sup>Shanghai AI Laboratory
+  <sup>1</sup>HKUST(GZ) · 
+  <sup>2</sup>NTU · 
+  <sup>3</sup>HKUST · 
+  <sup>4</sup>NUS · 
+  <sup>5</sup>FDU · 
+  <sup>6</sup>Shanghai AI Lab
 </p>
 
 <p align="center">
-  <sup>*</sup>Equal Contributions &nbsp;
-  <sup>†</sup>Project Lead &nbsp; 
-  <sup>‡</sup>Corresponding Authors
+  <sup>*</sup>Equal contribution &nbsp;
+  <sup>†</sup>Project lead &nbsp; 
+  <sup>‡</sup>Corresponding authors
 </p>
 
+---
 
-
-
-
-<!-- # Introduction -->
 
 
 <p align="center">
-  <img src="figs/teaser.png" alt="3EED Teaser" width="80%">
+  <img src="figs/teaser.png" alt="3EED Teaser" width="90%">
 </p>
 
 
+## 🎯 Highlights
+
+- **🌍 Cross-Platform**: First 3D grounding dataset spanning **vehicle**, **drone**, and **quadruped** platforms
+- **📊 Large-Scale**: Large-scale annotated samples across diverse real-world scenarios
+- **🔀 Multi-Modal**: Synchronized **RGB**, **LiDAR**, and **language** annotations
+- **🎯 Challenging**: Complex outdoor environments with varying object densities and viewpoints
+- **📏 Reproducible**: Unified evaluation protocols and baseline implementations
 
 
+## Statistics
 
-# 📚 Table of Contents
+<p align="center">
+  <img src="figs/statics.jpg" alt="3EED Dataset Statistics" width="90%">
+</p>
 
+> 📄 For detailed dataset statistics and analysis, please refer to our paper.
+
+
+## 📰 News
+
+- **[2025.10]** 📦 Dataset and code are now publicly available on HuggingFace and GitHub!
+- **[2025.09]** 🎉 3EED has been accepted to **NeurIPS 2025 Dataset and Benchmark Track**!
+
+## 📚 Table of Contents
+
+- [🎯 Highlights](#-highlights)
+- [Statistics](#statistics)
+- [📰 News](#-news)
 - [📚 Table of Contents](#-table-of-contents)
-- [🔧 Environment Setup](#-environment-setup)
-  - [⚙️ Compilation](#️-compilation)
-- [📦 Pretrained Language Model](#-pretrained-language-model)
-- [🛠 Path Configuration](#-path-configuration)
-- [📁 Dataset Preparation](#-dataset-preparation)
-- [🚀 Single-Object 3D Visual Grounding](#-single-object-3d-visual-grounding)
-  - [Training on All Platforms (Union)](#training-on-all-platforms-union)
-  - [Training on a Single Platform (e.g., Quadruped)](#training-on-a-single-platform-eg-quadruped)
-  - [Evaluation on All Platforms](#evaluation-on-all-platforms)
-  - [Evaluation on a Single Platform](#evaluation-on-a-single-platform)
-- [🎯 Multi-Object 3D Visual Grounding](#-multi-object-3d-visual-grounding)
+- [⚙️ Installation](#️-installation)
+  - [Environment Setup](#environment-setup)
+  - [Custom CUDA Operators](#custom-cuda-operators)
+- [📦 Pretrained Models](#-pretrained-models)
+  - [Language Encoder](#language-encoder)
+- [💾 Dataset](#-dataset)
+  - [Download](#download)
+  - [Dataset Structure](#dataset-structure)
+- [🚀 Quick Start](#-quick-start)
   - [Training](#training)
   - [Evaluation](#evaluation)
-<!-- - [Contact](#-contact) -->
+  - [Visualization](#visualization)
+  - [Baseline Checkpoints](#baseline-checkpoints)
+- [📖 Citation](#-citation)
+- [📄 License](#-license)
+- [🙏 Acknowledgements](#-acknowledgements)
+  - [Codebase \& Methods](#codebase--methods)
+  - [Dataset Sources](#dataset-sources)
 
 
-# 🔧 Environment Setup
+## ⚙️ Installation
 
-**System**
-- OS: Ubuntu 22.04 (Linux 5.15.0-57-generic)
-- Python: 3.9.18
-- GCC: 9.5.0
+### Environment Setup
 
-**Hardware**
-- GPU: NVIDIA GeForce RTX 3090
-- Driver Version: 570.86.15
+We support both CUDA 11 and CUDA 12 environments. Choose the one that matches your system:
 
-**CUDA Runtime**
-- CUDA Toolkit: 11.1  
-- cuDNN: 8.0.5
+<details>
+<summary><b>Option 1: CUDA 11.1 Environment</b></summary>
 
-**Python Libraries**
-- PyTorch: 1.9.1+cu111  
-- Other dependencies: see [`environment.yaml`](./environment.yaml)
+| Component   | Version         |
+|-------------|-----------------|
+| CUDA        | 11.1            |
+| cuDNN       | 8.0.5           |
+| PyTorch     | 1.9.1+cu111     |
+| torchvision | 0.10.1+cu111    |
+| Python      | 3.10 / 3.11     |
 
-To reproduce the environment:
+**Setup:**
 ```bash
-conda env create -f environment.yaml
-conda activate SG_Nav
+conda env create -f environment_cu11.yaml
+conda activate 3eed
 ```
+</details>
 
-## ⚙️ Compilation
+<details>
+<summary><b>Option 2: CUDA 12.4 Environment</b></summary>
 
-Compile custom CUDA ops before training:
+| Component   | Version         |
+|-------------|-----------------|
+| CUDA        | 12.4            |
+| cuDNN       | 8.0.5           |
+| PyTorch     | 2.5.1+cu124     |
+| torchvision | 0.20.1+cu124    |
+| Python      | 3.10 / 3.11     |
 
+**Setup:**
+```bash
+conda env create -f environment_cu12.yaml
+conda activate 3eed
 ```
+</details>
+
+### Custom CUDA Operators
+
+```bash
 cd ops/teed_pointnet/pointnet2_batch
 python setup.py develop
-```
 
-then,
-```
-cd ops/teed_pointnet/roiaware_pool3d
+cd ../roiaware_pool3d
 python setup.py develop
 ```
 
-# 📦 Pretrained Language Model
+## 📦 Pretrained Models
 
-Download the `roberta_base` checkpoint and place it under:
-```
-data/roberta_base/
-```
+### Language Encoder
 
-# 🛠 Path Configuration
+Download the [RoBERTa-base checkpoint](https://huggingface.co/FacebookAI/roberta-base/) from HuggingFace and move it to `data/roberta_base`.
 
-Set your project root path manually if necessary:
+## 💾 Dataset
 
-Example:
-```
-sys.path.append("/home/your_username/code/3eed/")
-```
+### Download
 
+Download the 3EED dataset from HuggingFace:
 
-# 📁 Dataset Preparation
+🔗 **Dataset Link**: https://huggingface.co/datasets/RRRong/3EED
 
-After downloading the dataset, extract and place it in:
-```
-cd data/3eed
-```
+### Dataset Structure
 
-The expected folder structure:
-```
-├── M3ED-Drone 
-    ├── ...
-    └── Outdoor_Day_penno_trees
-├── M3ED-Quadruped 
-    ├── ...
-    └── Outdoor_Day_srt_under_bridge_2
-├── roberta_base 
-├── splits
-└── waymo
-```
-
-# 🚀 Single-Object 3D Visual Grounding
-
-## Training on All Platforms (Union)
+After extraction, organize your dataset as follows:
 
 ```
+data/3eed/
+├── drone/                    # Drone platform data
+│   ├── scene-0001/
+│   │   ├── 0000_0/
+│   │   │   ├── image.jpg
+│   │   │   ├── lidar.bin
+│   │   │   └── meta_info.json
+│   │   └── ...
+│   └── ...
+├── quad/                     # Quadruped platform data
+│   ├── scene-0001/
+│   └── ...
+├── waymo/                    # Vehicle platform data
+│   ├── scene-0001/
+│   └── ...
+├── roberta_base/            # Language model weights
+└── splits/                  # Train/val split files
+    ├── drone_train.txt
+    ├── drone_val.txt
+    ├── quad_train.txt
+    ├── quad_val.txt
+    ├── waymo_train.txt
+    └── waymo_val.txt
+```
+
+----
+
+## 🚀 Quick Start
+
+### Training
+
+Train the baseline model on different platform combinations:
+
+
+```bash
+# Train on all platforms (recommended for best performance)
 bash scripts/train_3eed.sh
+
+# Train on single platform
+bash scripts/train_waymo.sh   # Vehicle only
+bash scripts/train_drone.sh   # Drone only
+bash scripts/train_quad.sh    # Quadruped only
 ```
 
-## Training on a Single Platform (e.g., Quadruped)
 
-```
-bash scripts/train_quad.sh
-```
+**Output:**
+- Checkpoints: `logs/Train_<datasets>_Val_<datasets>/<timestamp>/`
+- Training logs: `logs/Train_<datasets>_Val_<datasets>/<timestamp>/log.txt`
+- TensorBoard logs: `logs/Train_<datasets>_Val_<datasets>/<timestamp>/tensorboard/`
 
-## Evaluation on All Platforms
 
-```
+### Evaluation
+
+Evaluate trained models on validation sets:
+
+**Quick Evaluation:**
+```bash
+# Evaluate on all platforms
 bash scripts/val_3eed.sh
-```
-Make sure to set the correct path for `--checkpoint_path` in the script.
 
-## Evaluation on a Single Platform
-
-```
-bash scripts/val_quad.sh
+# Evaluate on single platform
+bash scripts/val_waymo.sh    # Vehicle
+bash scripts/val_drone.sh    # Drone
+bash scripts/val_quad.sh     # Quadruped
 ```
 
+**⚠️ Before running evaluation:**
+1. Update `--checkpoint_path` in the script to point to your trained model
+2. Ensure the validation dataset is downloaded and properly structured
 
-# 🎯 Multi-Object 3D Visual Grounding
+**Output:**
+- Results saved to: `<checkpoint_dir>/evaluation/Val_<dataset>/<timestamp>/`
 
-## Training
+### Visualization
 
+Visualize predictions with 3D bounding boxes overlaid on point clouds:
+
+```bash
+# Visualize prediction results
+python utils/visualize_pred.py
 ```
-scripts/train_multi_3eed.sh
+
+**Visualization Output:**
+- 🟢 **Ground Truth**: Green bounding box
+- 🔴 **Prediction**: Red bounding box
+
+**Output Structure:**
+```
+visualizations/
+├── waymo/
+│   ├── scene-0001_frame-0000/
+│   │   ├── pointcloud.ply
+│   │   ├── pred/gt_bbox.ply
+│   │   └── info.txt
+│   └── ...
+├── drone/
+└── quad/
 ```
 
-## Evaluation
+### Baseline Checkpoints
 
+Baseline models and predictions are available at: https://huggingface.co/RRRong/3EED
+
+
+## 📖 Citation
+
+If you find our work helpful, please consider citing:
+
+```bibtex
+@inproceedings{li2025_3eed,
+  title     = {3EED: Ground Everything Everywhere in 3D},
+  author    = {Rong Li and Yuhao Dong and Tianshuai Hu and Ao Liang and 
+               Youquan Liu and Dongyue Lu and Liang Pan and Lingdong Kong and 
+               Junwei Liang and Ziwei Liu},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS) 
+               Datasets and Benchmarks Track},
+  year      = {2025}
+}
 ```
-scripts/val_multi_3eed.sh
-```
-Make sure to set the correct path for `--checkpoint_path` in the script.
 
+## 📄 License
 
-# TODO
+This repository is released under the **Apache 2.0 License** (see [LICENSE](LICENSE)).
 
-- [ ] Add rotation in prediction 
+## 🙏 Acknowledgements
+
+We sincerely thank the following projects and teams that made this work possible:
+
+### Codebase & Methods
+- [**BUTD-DETR**](https://github.com/nickgkan/butd_detr) - Bottom-Up Top-Down DETR for visual grounding
+- [**WildRefer**](https://github.com/4DVLab/WildRefer) - Wild referring expression comprehension
+
+### Dataset Sources
+- [**Waymo Open Dataset**](https://waymo.com/open/) - Vehicle platform data
+- [**M3ED**](https://m3ed.io/) - Drone and quadruped platform data
+
+---
+
+<div align="center">
+
+<!-- ### 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=iris0329/3eed&type=Date)](https://star-history.com/#iris0329/3eed&Date)
+
+--- -->
+
+Made with ❤️ by the 3EED Team
+
+[⬆️ Back to Top](#3eed-ground-everything-everywhere-in-3d)
+
+</div>

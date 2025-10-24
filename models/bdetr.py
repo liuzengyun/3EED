@@ -67,7 +67,7 @@ class BeaUTyDETR(nn.Module):
         # ipdb.set_trace()
         # self.backbone_net = Pointnet2Backbone(input_feature_dim=0, width=1)
         # if input_feature_dim == 3 and pointnet_ckpt is not None:
-        #     self.backbone_net.load_state_dict(torch.load(pointnet_ckpt), strict=False)
+            # self.backbone_net.load_state_dict(torch.load(pointnet_ckpt), strict=False)
         # cfg = get_cfg()
         self.backbone_net = Point_Backbone_V2(model_cfg=get_cfg().BACKBONE_3D, num_class=num_class, input_channels=3)
 
@@ -207,7 +207,7 @@ class BeaUTyDETR(nn.Module):
         end_points["seed_features"] = points_features
         if self.contrastive_align_loss:
             proj_tokens = F.normalize(self.contrastive_align_projection_text(text_feats), p=2, dim=-1)
-            end_points["proj_tokens"] = proj_tokens  # MARK 这个用来计算contrastive loss
+            end_points["proj_tokens"] = proj_tokens  # MARK used to compute contrastive loss
 
         # Query Points Generation
         end_points = self._generate_queries(points_xyz, points_features, end_points)
@@ -251,7 +251,7 @@ class BeaUTyDETR(nn.Module):
             )  # (B, V, F)
 
             if self.contrastive_align_loss:
-                end_points[f"{prefix}proj_queries"] = F.normalize(self.contrastive_align_projection_image(query), p=2, dim=-1)  # MARK 这个用来计算contrastive loss
+                end_points[f"{prefix}proj_queries"] = F.normalize(self.contrastive_align_projection_image(query), p=2, dim=-1)  # MARK used to compute contrastive loss
 
             # Prediction
             base_xyz, base_size = self.prediction_heads[i](query.transpose(1, 2).contiguous(), base_xyz=cluster_xyz, end_points=end_points, prefix=prefix)  # (B, F, V)

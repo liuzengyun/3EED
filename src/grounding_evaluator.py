@@ -1,14 +1,7 @@
-# ------------------------------------------------------------------------
-# BEAUTY DETR
-# Copyright (c) 2022 Ayush Jain & Nikolaos Gkanatsios
-# Licensed under CC-BY-NC [see LICENSE for details]
-# All Rights Reserved
-# ------------------------------------------------------------------------
-"""A class to collect and evaluate language grounding results."""
-
 import torch
 
 from models.losses import _iou3d_par, box_cxcyczwhd_to_xyzxyz
+from utils.eval_det import iou3d_rotated_vs_aligned
 import utils.misc as misc
 from collections import defaultdict
 import ipdb
@@ -63,7 +56,7 @@ class GroundingEvaluator:
         """Print accumulated accuracies."""
         return_str = "\n"
         mode_str = {"bbs": "Box given span (soft-token)", "bbf": "Box given span (contrastive)"}
-        for prefix in ["last_", "proposal_"]:  # self.prefixes: # 我改了，但是如果报错了，可以改回来
+        for prefix in ["last_", "proposal_"]:  
             for mode in ["bbs", "bbf"]:
                 for t in self.thresholds:
                     line = f"{prefix} {mode_str[mode]} Acc{t:.2f}: " + ", ".join(
@@ -80,11 +73,6 @@ class GroundingEvaluator:
 
         return_str += "\n\n"
 
-        # for field in ["easy", "hard", "vd", "vid", "unique", "multi"]:
-        #     # print(field, self.dets[field] / self.gts[field])
-        #     value = self.dets[field] / self.gts[field]
-        #     return_str += f"{field}: {value:.3f}\n"
-
         return return_str
 
     def synchronize_between_processes(self):
@@ -96,7 +84,7 @@ class GroundingEvaluator:
             for key in all_dets[0].keys():
                 merged_predictions[key] = 0
                 for p in all_dets:
-                    # 确保所有值都在 CPU 上
+                    # Ensure all values are on CPU
                     if isinstance(p[key], torch.Tensor):
                         p[key] = p[key].cpu()
                     merged_predictions[key] += p[key]
@@ -106,7 +94,7 @@ class GroundingEvaluator:
             for key in all_gts[0].keys():
                 merged_predictions[key] = 0
                 for p in all_gts:
-                    # 确保所有值都在 CPU 上
+                    # Ensure all values are on CPU
                     if isinstance(p[key], torch.Tensor):
                         p[key] = p[key].cpu()
                     merged_predictions[key] += p[key]
@@ -117,23 +105,27 @@ class GroundingEvaluator:
         Evaluate all accuracies.
 
         Args:
+            batch_data (dict): contains original data (utterances, meta_path, etc.)
             end_points (dict): contains predictions and gt
             prefix (str): layer name
         """
-        self.evaluate_bbox_by_span(end_points, prefix)
+        self.evaluate_bbox_by_span(batch_data, end_points, prefix)
         self.evaluate_bbox_by_contrast(batch_data, end_points, prefix)
 
-    def evaluate_bbox_by_span(self, end_points, prefix):
+    def evaluate_bbox_by_span(self, batch_data, end_points, prefix):
         """
         Evaluate bounding box IoU for top gt span detections.
 
         Args:
+            batch_data (dict): contains original data (utterances, meta_path, etc.)
             end_points (dict): contains predictions and gt
             prefix (str): layer name
         """
-        # Parse gt
-        positive_map, gt_bboxes = self._parse_gt(end_points)
-        # print(f"GT positive_map: {positive_map[0][0][:10]}\nGT gt_bboxes: {gt_bboxes}\n\n")
+        # Parse gt - NOW USING ROTATED GT FOR FAIR COMPARISON
+        positive_map = torch.clone(end_points["positive_map"])
+        positive_map[positive_map > 0] = 1
+        gt_bboxes_rotated = batch_data["gt_bboxes"]  # (B, 132, 7) or (B, 132, 9) with rotation
+        
         # Parse predictions
         sem_scores = end_points[f"{prefix}sem_cls_scores"].softmax(-1)  # B, num_query=256, len_token=256
 
@@ -159,10 +151,12 @@ class GroundingEvaluator:
             top = scores.argsort(1, True)[:, :10]  # (obj, 10) # Sort each GT (only 1 here) and get top 10 queries
             pbox = pred_bbox[bid, top.reshape(-1)]  #  # Query indices, sorted by score from high to low
 
-            # IoU
-            ious, _ = _iou3d_par(box_cxcyczwhd_to_xyzxyz(gt_bboxes[bid][:num_obj]), box_cxcyczwhd_to_xyzxyz(pbox))  # IoU between 10 queries and this gt box
-            ious = ious.reshape(top.size(0), top.size(0), top.size(1))
-            ious = ious[torch.arange(len(ious)), torch.arange(len(ious))]
+            # IoU - NOW USING ROTATED GT FOR FAIR COMPARISON
+            gt_boxes = gt_bboxes_rotated[bid][:num_obj]  # (1, 7) or (1, 9) - with rotation
+            ious, _ = iou3d_rotated_vs_aligned(
+                gt_boxes,  # (1, 7/9) - rotated GT bbox
+                pbox       # (10, 6) - axis-aligned pred bboxes
+            )  # returns (1, 10) - IoU between 1 gt and 10 predictions
 
             # Measure IoU>threshold, ious are (obj, 10)
             topks = self.topks  # [1, 5, 10]
@@ -176,52 +170,100 @@ class GroundingEvaluator:
 
     def evaluate_bbox_by_contrast(self, batch_data, end_points, prefix):
         """
-        Evaluate bounding box IoU by contrasting with span features.
+        Evaluate bounding box IoU using contrastive learning (via similarity between query and token features)
+
+        Core idea:
+        1. DETR model predicts 256 candidate boxes (set prediction)
+        2. Compute contrastive matching score between each candidate and language tokens
+        3. Select top-k candidates with highest scores
+        4. Compute IoU between these candidates and GT to evaluate accuracy
 
         Args:
-            end_points (dict): contains predictions and gt
-            prefix (str): layer name
+            batch_data (dict): contains original data (utterances, meta_path, etc.)
+            end_points (dict): contains model predictions and ground truth
+            prefix (str): layer name, e.g., "last_" or "proposal_"
         """
-        # Parse gt
-        positive_map, gt_bboxes = self._parse_gt(end_points)
-        # print(f"GT positive_map: {positive_map[0][0][:10]}\nGT gt_bboxes: {gt_bboxes}\n\n")
-        # Parse predictions
-        pred_center = end_points[f"{prefix}center"]  # B, Q, 3
-        pred_size = end_points[f"{prefix}pred_size"]  # (B,Q,3) (l,w,h)
-        assert (pred_size < 0).sum() == 0
-        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # Predicted bbox
+        # ============ 1. Parse Ground Truth ============
+        # ipdb.set_trace() # TODO if using batch_data["gt_bboxes"]
+        # positive_map, gt_bboxes = self._parse_gt(end_points)
+        # Get original GT bboxes from batch_data (with rotation)
+        positive_map = torch.clone(end_points["positive_map"])
+        positive_map[positive_map > 0] = 1
+        gt_bboxes_rotated = batch_data["gt_bboxes"]  # (B, 132, 7) or (B, 132, 9)
+        # Waymo: [x,y,z,l,w,h,yaw]  Quad/Drone: [x,y,z,l,w,h,yaw,pitch,roll]
 
-        proj_tokens = end_points["proj_tokens"]  # (B, tokens, 64) # NOTE Text features
-        # After projection layer (fully connected layer) and L2 normalization, get token representation in contrastive learning space.
-        # This is the key in contrastive learning, representing language semantic space.
-        proj_queries = end_points[f"{prefix}proj_queries"]  # (B, Q, 64)
-        # NOTE After each decoder layer, project query features (3D scene candidate box features) to contrastive space and normalize.
-        # This is the query in contrastive learning, representing your model's understanding of point cloud regions/3D proposals.
+        # positive_map: (B=8, 132, 256) - token positions per GT object (one-hot)
+        # gt_bboxes_rotated: (B=8, 132, 7/9) - GT bbox with rotation; first num_obj are valid
+        
+        # ============ 2. Parse model predictions ============
+        pred_center = end_points[f"{prefix}center"]  # (B=8, Q=256, 3) - predicted centers
+        pred_size = end_points[f"{prefix}pred_size"]  # (B=8, Q=256, 3) - predicted sizes (l,w,h)
+        assert (pred_size < 0).sum() == 0  # ensure sizes are positive
+        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # (B=8, Q=256, 6)
+        # DETR: each sample predicts 256 candidate boxes (queries)
+
+        # ============ 3. Compute contrastive scores ============
+        proj_tokens = end_points["proj_tokens"]  # (B=8, tokens, 64)
+        # Text features: tokens projected to contrastive space (64-d)
+        
+        proj_queries = end_points[f"{prefix}proj_queries"]  # (B=8, Q=256, 64)
+        # Query features: 256 query features projected to contrastive space (64-d)
+        
         sem_scores = torch.matmul(
             proj_queries, proj_tokens.transpose(-1, -2)
-        )  # NOTE Semantic similarity (dot product) between each 3D candidate box (query) and each language token
-        sem_scores_ = (sem_scores / 0.07).softmax(-1)  # (B, Q, tokens) Here 0.07 is the common temperature parameter in contrastive learning to adjust distribution smoothness
-        sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)  # Pad to 256 dimensions
+        )  # (B=8, Q=256, tokens) - similarity of each query with each token (dot product)
+        
+        sem_scores_ = (sem_scores / 0.07).softmax(-1)  # (B=8, Q=256, tokens)
+        # Temperature 0.07: common parameter in contrastive learning
+        # softmax: normalize to probability distribution
+        
+        # Pad to fixed dimension 256
+        sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)  # (B=8, Q=256, 256)
         sem_scores = sem_scores.to(sem_scores_.device)
         sem_scores[:, : sem_scores_.size(1), : sem_scores_.size(2)] = sem_scores_
 
-        # Highest scoring box -> iou
-        for bid in range(len(positive_map)):
-            # Keep scores for annotated objects only
-            num_obj = int(end_points["box_label_mask"][bid].sum())
-            pmap = positive_map[bid, :num_obj]
-            scores = (sem_scores[bid].unsqueeze(0) * pmap.unsqueeze(1)).sum(-1)  # [Q=1, 256] Same as span logic, filter scores corresponding to target tokens using positive_map
-            # positive_map = tensor([[0., 1., 0., 0., 0., 0., ..., 0.]])  # Only focus on 2nd token
+        # ============ 4. Evaluate per sample ============
+        for bid in range(len(positive_map)):  # iterate over each sample in batch
+            # 4.1 Get valid number of GT objects
+            num_obj = int(end_points["box_label_mask"][bid].sum())  # how many GTs in current sample
+            assert num_obj == 1, f"num_obj: {num_obj}. only support obj number is 1."
+            # Currently only single-object settings supported (quad/drone/waymo single target)
+            
+            # 4.2 计算每个 query 与目标描述的匹配分数
+            pmap = positive_map[bid, :num_obj]  # (1, 256) - target token positions
+            # e.g., for "the red car", pmap marks token positions for "red" and "car"
+            
+            scores = (sem_scores[bid].unsqueeze(0) * pmap.unsqueeze(1)).sum(-1)  # (1, 256)
+            # sem_scores[bid]: (256, 256) - 当前样本的 256 个 queries 对所有 tokens 的分数
+            # .unsqueeze(0): (1, 256, 256)
+            # pmap.unsqueeze(1): (1, 1, 256) - 目标 token 的 mask
+            # 相乘后 sum(-1)：只保留目标 tokens 的分数，得到每个 query 的总分
+            # 结果：(1, 256) - 256 个 queries 对目标描述的匹配分数
 
-            # 10 predictions per gt box
-            top = scores.argsort(1, True)[:, :10]  # (obj, 10)
-            pbox = pred_bbox[bid, top.reshape(-1)]
+            # 4.3 Select top-10 highest scoring candidates
+            top = scores.argsort(1, True)[:, :10]  # (1, 10)
+            # argsort(1, True): sort by score descending, return indices
+            # [:, :10]: take top 10 indices
+            
+            pbox = pred_bbox[bid, top.reshape(-1)]  # (10, 6) - [cx,cy,cz,w,h,d] axis-aligned
+            # Pick these 10 best-matching predicted boxes from 256 candidates
 
-            # IoU
-            ious, _ = _iou3d_par(box_cxcyczwhd_to_xyzxyz(gt_bboxes[bid][:num_obj]), box_cxcyczwhd_to_xyzxyz(pbox))  # (obj, 6)  # (obj*10, 6)  # (obj, obj*10)
-            ious = ious.reshape(top.size(0), top.size(0), top.size(1))
-            ious = ious[torch.arange(len(ious)), torch.arange(len(ious))]
+            # ipdb.set_trace() # TODO print gt_bboxes_rotated[bid][:num_obj]
+            # 4.4 Compute IoU
+            # ious, _ = _iou3d_par(
+            #     box_cxcyczwhd_to_xyzxyz(gt_bboxes[bid][:num_obj]),  # (1, 6) - gt bbox
+            #     box_cxcyczwhd_to_xyzxyz(pbox)  # (10, 6) - top-10 预测框
+            # )  # 返回 (1, 10) - 1 个 gt 与 10 个预测框的 IoU
+            
+            # 4.4 Compute IoU (rotated GT vs axis-aligned pred)
+            gt_boxes = gt_bboxes_rotated[bid][:num_obj]  # (1, 7) or (1, 9) - with rotation
+            ious, _ = iou3d_rotated_vs_aligned(
+                gt_boxes,  # (1, 7/9) - rotated GT bbox
+                pbox       # (10, 6) - axis-aligned pred bboxes
+            )  # returns (1, 10) - IoU between 1 GT and 10 predictions
+            # Since num_obj==1 (single target), ious shape is already correct
 
+            # 4.5 Record predictions (for later analysis)
             meta_path = batch_data["meta_path"][bid]
             dataset = meta_path.split("/")[-4]
             sequence = meta_path.split("/")[-3]
@@ -230,52 +272,42 @@ class GroundingEvaluator:
             record = {
                 "id": f"{dataset}/{sequence}/{frame}",
                 "utterance": batch_data["utterances"][bid],
-                "gt_box": batch_data["gt_bboxes"][bid][:num_obj].cpu().numpy().tolist(),  # num_obj, 7
-                "pred_box": pred_bbox[bid, top[:, 0]].cpu().numpy().tolist(),
-                "ious": ious[:, 0].cpu().numpy().tolist(),
+                "gt_box": batch_data["gt_bboxes"][bid][:num_obj].cpu().numpy().tolist(), # (1, 7/9) - keep full rotation
+                "pred_box": pbox[0].cpu().numpy().tolist(),  # top-1 predicted box
+                "ious": ious[:, 0].cpu().numpy().tolist(),  # IoU of top-1
             }
             self.prediction_records.append(record)
 
+            # Accumulate mean IoU (for mIoU)
             self.dets["iou"] += ious[:, 0].cpu().numpy().sum()
             self.dets["num_iou"] += num_obj
 
-            # Measure IoU>threshold, ious are (obj, 10)
+            # ============ 5. Compute accuracy metrics ============
+            # Iterate different IoU thresholds (0.25, 0.5)
             for t in self.thresholds:
-                thresholded = ious > t  # num_objs
+                thresholded = ious > t  # (1, 10) - which predictions exceed threshold
+                # e.g., when t=0.25, thresholded = [False, True, True, False, ...]
 
+                # Iterate different top-k (1, 5, 10)
                 for k in self.topks:
-                    found = thresholded[:, :k].any(1)  # num_objs
-                    all_found = found.all().item()
+                    # Check if any of top-k predictions has IoU > threshold
+                    found = thresholded[:, :k].any(1)  # (1,) - bool tensor
+                    # .any(1): for each GT, check if any among top-k matches
+                    # e.g., k=1: only check top-1; k=5: check top-5
+                    
+                    all_found = found.all().item()  # bool (0 or 1)
+                    # .all(): require all GTs to be matched (equals found[0] for single GT)
+                    # .item(): convert to Python bool/int
 
-                    # NOTE bbf is "Box given span (contrastive)"
-                    self.dets[(prefix, t, k, "bbf")] += all_found  # found.sum().item()
-                    self.gts[(prefix, t, k, "bbf")] += 1  # len(thresholded)
+                    # Update statistics
+                    # NOTE: bbf = "Box given span (contrastive)"
+                    self.dets[(prefix, t, k, "bbf")] += all_found  # success samples +1 or +0
+                    self.gts[(prefix, t, k, "bbf")] += 1  # total samples +1
 
-                    # Only consider top-1 case (highest scoring prediction)
-                    if prefix == "last_" and k == 1:  # NOTE Only last_ layer pred considered here
-                        # found = found[0].item()
-                        self.dets[("total_acc", t, "bbf")] += all_found  # found
+                    # For total_acc calculation only on the last layer and top-1 (for Acc@0.25 printing)
+                    if prefix == "last_" and k == 1:
+                        self.dets[("total_acc", t, "bbf")] += all_found
                         self.gts[("total_acc", t, "bbf")] += 1
-
-                        if t == self.thresholds[0]:  # iou 0.25
-                            if end_points["is_view_dep"][bid]:
-                                self.gts["vd"] += 1
-                                self.dets["vd"] += found
-                            else:
-                                self.gts["vid"] += 1
-                                self.dets["vid"] += found
-                            if end_points["is_hard"][bid]:
-                                self.gts["hard"] += 1
-                                self.dets["hard"] += found
-                            else:
-                                self.gts["easy"] += 1
-                                self.dets["easy"] += found
-                            if end_points["is_unique"][bid]:
-                                self.gts["unique"] += 1
-                                self.dets["unique"] += found
-                            else:
-                                self.gts["multi"] += 1
-                                self.dets["multi"] += found
 
     def _parse_gt(self, end_points):
         positive_map = torch.clone(end_points["positive_map"])  # (B, K, 256)
