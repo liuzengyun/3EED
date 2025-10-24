@@ -5,22 +5,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
   <img src="https://img.shields.io/badge/Python-3.10%7C3.11-blue" />
   <img src="https://img.shields.io/badge/CUDA-11.1%20%7C%2012.4-informational" />
-  <img src="https://img.shields.io/github/stars/iris0329/3eed?style=social" />
-  <img src="https://img.shields.io/github/last-commit/iris0329/3eed" />
+  <img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Firis0329%2F3eed&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=Visitors&edge_flat=false" alt="Visitors" />
   <a href="https://huggingface.co/datasets/RRRong/3EED/"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
-</p>
-
-<p align="center">
-  <strong>A large-scale cross-platform (vehicle/drone/quadruped), multi-modal (RGB+LiDAR+language) 3D visual grounding benchmark</strong>
-</p>
-
-<p align="center">
-  <a href="#-highlights">Highlights</a> •
-  <a href="#-news">News</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-dataset">Dataset</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-citation">Citation</a>
 </p>
 
 <p align="center">
