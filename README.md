@@ -2,44 +2,41 @@
 <h1 align="center">3EED: Ground Everything Everywhere in 3D</h1>
 
 <p align="center">
+    <a href="https://huggingface.co/datasets/RRRong/3EED/"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
+    <a href="https://arxiv.org/"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b.svg" /></a>
+  <a href="https://3eed.github.io"><img src="https://img.shields.io/badge/Project-Page-green.svg" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
   <img src="https://img.shields.io/badge/Python-3.10%7C3.11-blue" />
   <img src="https://img.shields.io/badge/CUDA-11.1%20%7C%2012.4-informational" />
-  <img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Firis0329%2F3eed&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=Visitors&edge_flat=false" alt="Visitors" />
-  <a href="https://huggingface.co/datasets/RRRong/3EED/"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=iris0329.3eed" alt="Visitors"/>
 </p>
 
-<p align="center">
-  <strong>Rong Li</strong><sup>1,*</sup>,
-  <strong>Yuhao Dong</strong><sup>2,*</sup>,
-  <strong>Tianshuai Hu</strong><sup>3,*</sup>,
-  <strong>Ao Liang</strong><sup>4,*</sup>,
-  <strong>Youquan Liu</strong><sup>5,*</sup>,
-  <strong>Dongyue Lu</strong><sup>4,*</sup><br>
-  <strong>Liang Pan</strong><sup>6</sup>,
-  <strong>Lingdong Kong</strong><sup>4†</sup>,
-  <strong>Junwei Liang</strong><sup>1,3‡</sup>,
-  <strong>Ziwei Liu</strong><sup>2‡</sup>
+<p align="center" style="line-height: 1.3;">
+  <strong><a href="https://rongli.tech/">Rong Li</a></strong><sup>1,*</sup>,
+  <strong><a href="https://scholar.google.com/citations?hl=zh-CN&user=kMui170AAAAJ">Yuhao Dong</a></strong><sup>2,*</sup>,
+  <strong><a href="https://scholar.google.com/citations?hl=en&user=RJ7NR54AAAAJ">Tianshuai Hu</a></strong><sup>3,*</sup>,
+  <strong><a href="https://alanliangc.github.io/">Ao Liang</a></strong><sup>4,*</sup>,
+  <strong><a href="https://scholar.google.com/citations?user=J9a48hMAAAAJ&hl=en">Youquan Liu</a></strong><sup>5,*</sup>,
+  <strong><a href="https://dylanorange.github.io/">Dongyue Lu</a></strong><sup>4,*</sup><br>
+  <strong><a href="https://scholar.google.com/citations?user=lSDISOcAAAAJ">Liang Pan</a></strong><sup>6</sup>,
+  <strong><a href="https://ldkong.com/">Lingdong Kong</a></strong><sup>4†</sup>,
+  <strong><a href="https://junweiliang.me/">Junwei Liang</a></strong><sup>1,3‡</sup>,
+  <strong><a href="https://liuziwei7.github.io/">Ziwei Liu</a></strong><sup>2‡</sup><br>
 </p>
-
-<p align="center">
+<p align="center" style="line-height: 0.9;">
   <sup>1</sup>HKUST(GZ) · 
   <sup>2</sup>NTU · 
   <sup>3</sup>HKUST · 
   <sup>4</sup>NUS · 
   <sup>5</sup>FDU · 
-  <sup>6</sup>Shanghai AI Lab
-</p>
-
-<p align="center">
+  <sup>6</sup>Shanghai AI Lab<br>
+  <br>
   <sup>*</sup>Equal contribution &nbsp;
   <sup>†</sup>Project lead &nbsp; 
   <sup>‡</sup>Corresponding authors
 </p>
 
 ---
-
-
 
 <p align="center">
   <img src="figs/teaser.png" alt="3EED Teaser" width="90%">
@@ -312,7 +309,7 @@ We sincerely thank the following projects and teams that made this work possible
 
 --- -->
 
-Made with ❤️ by the 3EED Team
+❤️ by the 3EED Team
 
 [⬆️ Back to Top](#3eed-ground-everything-everywhere-in-3d)
 
