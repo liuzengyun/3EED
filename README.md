@@ -2,9 +2,9 @@
 <h1 align="center">3EED: Ground Everything Everywhere in 3D</h1>
 
 <p align="center">
-    <a href="https://huggingface.co/datasets/RRRong/3EED/"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
-    <a href="https://arxiv.org/"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b.svg" /></a>
-  <a href="https://3eed.github.io"><img src="https://img.shields.io/badge/Project-Page-green.svg" /></a>
+    <a href="https://huggingface.co/datasets/RRRong/3EED/tree/main"><img src="https://img.shields.io/badge/Dataset-HuggingFace-ffcc00" /></a>
+    <a href="http://arxiv.org/abs/2511.01755"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b.svg" /></a>
+  <a href="https://project-3eed.github.io/"><img src="https://img.shields.io/badge/Project-Page-green.svg" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
   <img src="https://img.shields.io/badge/Python-3.10%7C3.11-blue" />
   <img src="https://img.shields.io/badge/CUDA-11.1%20%7C%2012.4-informational" />
@@ -264,7 +264,7 @@ visualizations/
 
 ### Baseline Checkpoints
 
-Baseline models and predictions are available at: https://huggingface.co/RRRong/3EED
+Baseline models and predictions are available at: [Huggingface](https://huggingface.co/datasets/RRRong/3EED/blob/main/baseline_ckpt_pred.zip)
 
 
 ## 📖 Citation
