@@ -109,11 +109,6 @@ We support both CUDA 11 and CUDA 12 environments. Choose the one that matches yo
 | torchvision | 0.10.1+cu111    |
 | Python      | 3.10 / 3.11     |
 
-**Setup:**
-```bash
-conda env create -f environment_cu11.yaml
-conda activate 3eed
-```
 </details>
 
 <details>
@@ -127,11 +122,6 @@ conda activate 3eed
 | torchvision | 0.20.1+cu124    |
 | Python      | 3.10 / 3.11     |
 
-**Setup:**
-```bash
-conda env create -f environment_cu12.yaml
-conda activate 3eed
-```
 </details>
 
 ### Custom CUDA Operators
