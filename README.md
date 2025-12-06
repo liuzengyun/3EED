@@ -51,6 +51,21 @@
 - **🎯 Challenging**: Complex outdoor environments with varying object densities and viewpoints
 - **📏 Reproducible**: Unified evaluation protocols and baseline implementations
 
+### :books: Citation
+
+If you find our work helpful, please consider citing:
+
+```bibtex
+@inproceedings{li2025_3eed,
+    title     = {{3EED}: Ground Everything Everywhere in {3D}},
+    author    = {Rong Li and Yuhao Dong and Tianshuai Hu and Ao Liang and Youquan Liu and Dongyue Lu and Liang Pan and Lingdong Kong and Junwei Liang and Ziwei Liu},
+    booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+    volume    = {38},
+    year      = {2025}
+}
+```
+
+
 
 ## Statistics
 
@@ -256,22 +271,6 @@ visualizations/
 
 Baseline models and predictions are available at: [Huggingface](https://huggingface.co/datasets/RRRong/3EED/blob/main/baseline_ckpt_pred.zip)
 
-
-## 📖 Citation
-
-If you find our work helpful, please consider citing:
-
-```bibtex
-@inproceedings{li2025_3eed,
-  title     = {3EED: Ground Everything Everywhere in 3D},
-  author    = {Rong Li and Yuhao Dong and Tianshuai Hu and Ao Liang and 
-               Youquan Liu and Dongyue Lu and Liang Pan and Lingdong Kong and 
-               Junwei Liang and Ziwei Liu},
-  booktitle = {Advances in Neural Information Processing Systems (NeurIPS) 
-               Datasets and Benchmarks Track},
-  year      = {2025}
-}
-```
 
 ## 📄 License
 
