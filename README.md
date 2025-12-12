@@ -12,25 +12,18 @@
 </p>
 
 <p align="center" style="line-height: 1.3;">
-  <strong><a href="https://rongli.tech/">Rong Li</a></strong><sup>1,*</sup>,
-  <strong><a href="https://scholar.google.com/citations?hl=zh-CN&user=kMui170AAAAJ">Yuhao Dong</a></strong><sup>2,*</sup>,
-  <strong><a href="https://scholar.google.com/citations?hl=en&user=RJ7NR54AAAAJ">Tianshuai Hu</a></strong><sup>3,*</sup>,
-  <strong><a href="https://alanliangc.github.io/">Ao Liang</a></strong><sup>4,*</sup>,
-  <strong><a href="https://scholar.google.com/citations?user=J9a48hMAAAAJ&hl=en">Youquan Liu</a></strong><sup>5,*</sup>,
-  <strong><a href="https://dylanorange.github.io/">Dongyue Lu</a></strong><sup>4,*</sup><br>
-  <strong><a href="https://scholar.google.com/citations?user=lSDISOcAAAAJ">Liang Pan</a></strong><sup>6</sup>,
-  <strong><a href="https://ldkong.com/">Lingdong Kong</a></strong><sup>4†</sup>,
-  <strong><a href="https://junweiliang.me/">Junwei Liang</a></strong><sup>1,3‡</sup>,
-  <strong><a href="https://liuziwei7.github.io/">Ziwei Liu</a></strong><sup>2‡</sup><br>
+  <strong><a href="https://rongli.tech/">Rong Li</a></strong><sup>*</sup>,&nbsp;&nbsp;
+  <strong><a href="https://scholar.google.com/citations?hl=zh-CN&user=kMui170AAAAJ">Yuhao Dong</a></strong><sup>*</sup>,&nbsp;&nbsp;
+  <strong><a href="https://scholar.google.com/citations?hl=en&user=RJ7NR54AAAAJ">Tianshuai Hu</a></strong><sup>*</sup>,&nbsp;&nbsp;
+  <strong><a href="https://alanliangc.github.io/">Ao Liang</a></strong><sup>*</sup>,&nbsp;&nbsp;
+  <strong><a href="https://scholar.google.com/citations?user=J9a48hMAAAAJ&hl=en">Youquan Liu</a></strong><sup>*</sup>,&nbsp;&nbsp;
+  <strong><a href="https://dylanorange.github.io/">Dongyue Lu</a></strong><sup>*</sup><br>
+  <strong><a href="https://scholar.google.com/citations?user=lSDISOcAAAAJ">Liang Pan</a></strong>,&nbsp;&nbsp;
+  <strong><a href="https://ldkong.com/">Lingdong Kong</a></strong><sup>†</sup>,&nbsp;&nbsp;
+  <strong><a href="https://junweiliang.me/">Junwei Liang</a></strong><sup>‡</sup>,&nbsp;&nbsp;
+  <strong><a href="https://liuziwei7.github.io/">Ziwei Liu</a></strong><sup>‡</sup><br>
 </p>
 <p align="center" style="line-height: 0.9;">
-  <sup>1</sup>HKUST(GZ) · 
-  <sup>2</sup>NTU · 
-  <sup>3</sup>HKUST · 
-  <sup>4</sup>NUS · 
-  <sup>5</sup>FDU · 
-  <sup>6</sup>Shanghai AI Lab<br>
-  <br>
   <sup>*</sup>Equal contribution &nbsp;
   <sup>†</sup>Project lead &nbsp; 
   <sup>‡</sup>Corresponding authors
@@ -45,11 +38,11 @@
 
 ## 🎯 Highlights
 
-- **🌍 Cross-Platform**: First 3D grounding dataset spanning **vehicle**, **drone**, and **quadruped** platforms
-- **📊 Large-Scale**: Large-scale annotated samples across diverse real-world scenarios
-- **🔀 Multi-Modal**: Synchronized **RGB**, **LiDAR**, and **language** annotations
-- **🎯 Challenging**: Complex outdoor environments with varying object densities and viewpoints
-- **📏 Reproducible**: Unified evaluation protocols and baseline implementations
+- **Cross-Platform**: First 3D grounding dataset spanning **vehicle**, **drone**, and **quadruped** platforms
+- **Large-Scale**: Large-scale annotated samples across diverse real-world scenarios
+- **Multi-Modal**: Synchronized **RGB**, **LiDAR**, and **language** annotations
+- **Challenging**: Complex outdoor environments with varying object densities and viewpoints
+- **Reproducible**: Unified evaluation protocols and baseline implementations
 
 ### :books: Citation
 
@@ -78,31 +71,30 @@ If you find our work helpful, please consider citing:
 
 ## 📰 News
 
-- **[2025.10]** 📦 Dataset and code are now publicly available on HuggingFace and GitHub!
-- **[2025.09]** 🎉 3EED has been accepted to **NeurIPS 2025 Dataset and Benchmark Track**!
+- **[2025.10]** Dataset and code are now publicly available on HuggingFace and GitHub! 📦 
+- **[2025.09]** 3EED has been accepted to **NeurIPS 2025 Dataset and Benchmark Track**! 🎉 
 
 ## 📚 Table of Contents
 
-- [🎯 Highlights](#-highlights)
+- [Highlights](#-highlights)
 - [Statistics](#statistics)
-- [📰 News](#-news)
-- [📚 Table of Contents](#-table-of-contents)
-- [⚙️ Installation](#️-installation)
+- [News](#-news)
+- [Table of Contents](#-table-of-contents)
+- [Installation](#️-installation)
   - [Environment Setup](#environment-setup)
   - [Custom CUDA Operators](#custom-cuda-operators)
-- [📦 Pretrained Models](#-pretrained-models)
+- [Pretrained Models](#-pretrained-models)
   - [Language Encoder](#language-encoder)
-- [💾 Dataset](#-dataset)
+- [Dataset](#-dataset)
   - [Download](#download)
   - [Dataset Structure](#dataset-structure)
-- [🚀 Quick Start](#-quick-start)
+- [Quick Start](#-quick-start)
   - [Training](#training)
   - [Evaluation](#evaluation)
   - [Visualization](#visualization)
   - [Baseline Checkpoints](#baseline-checkpoints)
-- [📖 Citation](#-citation)
-- [📄 License](#-license)
-- [🙏 Acknowledgements](#-acknowledgements)
+- [License](#-license)
+- [Acknowledgements](#-acknowledgements)
   - [Codebase \& Methods](#codebase--methods)
   - [Dataset Sources](#dataset-sources)
 
@@ -276,6 +268,7 @@ Baseline models and predictions are available at: [Huggingface](https://huggingf
 
 This repository is released under the **Apache 2.0 License** (see [LICENSE](LICENSE)).
 
+
 ## 🙏 Acknowledgements
 
 We sincerely thank the following projects and teams that made this work possible:
@@ -287,6 +280,21 @@ We sincerely thank the following projects and teams that made this work possible
 ### Dataset Sources
 - [**Waymo Open Dataset**](https://waymo.com/open/) - Vehicle platform data
 - [**M3ED**](https://m3ed.io/) - Drone and quadruped platform data
+
+
+## Related Projects
+
+| :sunglasses: Awesome | Projects |
+|:-:|:-|
+| |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/worldbench_survey.webp"> | **3D and 4D World Modeling: A Survey**<br>[[GitHub Repo](https://github.com/worldbench/survey)] - [[Project Page](https://worldbench.github.io/survey)] - [[Paper](https://worldbench.github.io/assets_common/papers/survey.pdf)] |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/worldlens.png"> | **WorldLens: Full-Spectrum Evaluations of Driving World Models in Real World**<br>[[GitHub Repo](https://github.com/worldbench/WorldLens)] - [[Project Page](https://worldbench.github.io/worldlens)] - [[Paper](https://worldbench.github.io/assets_common/papers/worldlens.pdf)] |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/lidarcrafter.png"> | **LiDARCrafter: Dynamic 4D World Modeling from LiDAR Sequences**<br>[[GitHub Repo](https://github.com/lidarcrafter/toolkit)] - [[Project Page]](https://lidarcrafter.github.io/) - [[Paper](https://arxiv.org/abs/2508.03692)] |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/drivebench.png"> | **Are VLMs Ready for Autonomous Driving? A Study from Reliability, Data & Metric Perspectives**<br>[[GitHub Repo](https://github.com/drive-bench/toolkit)] - [[Project Page]](https://drive-bench.github.io/) - [[Paper](https://arxiv.org/abs/2501.04003)] |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/pi3det.png"> | **Perspective-Invariant 3D Object Detection**<br>[[GitHub Repo](https://github.com/pi3det/toolkit)] - [[Project Page]](https://pi3det.github.io/) - [[Paper](https://arxiv.org/abs/2507.17665)] |
+| <img width="95px" src="https://github.com/ldkong1205/ldkong1205/blob/master/Images/dynamiccity.webp"> | **DynamicCity: Large-Scale 4D Occupancy Generation from Dynamic Scenes**<br>[[GitHub Repo](https://github.com/3DTopia/DynamicCity)] - [[Project Page]](https://dynamic-city.github.io/) - [[Paper](https://arxiv.org/abs/2410.18084)] |
+| |
+
 
 ---
 
