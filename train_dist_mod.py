@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from main_utils import parse_option, BaseTrainTester
+from main_utils import parse_option, BaseTrainTester, set_seed
 from data.model_util_scannet import ScannetDatasetConfig
 from src.joint_det_dataset import Joint3DDataset
 from src.grounding_evaluator import GroundingEvaluator#, GroundingGTEvaluator
@@ -80,7 +80,9 @@ class TrainTester(BaseTrainTester):
     @staticmethod
     def get_model(args):
         """Initialize the model."""
-        num_input_channel = int(args.use_color) * 3
+        num_input_channel = 3
+        if args.use_color:
+            num_input_channel += 3
         if args.use_height:
             num_input_channel += 1
         if args.use_multiview:
@@ -158,6 +160,15 @@ class TrainTester(BaseTrainTester):
             if evaluator is not None:
                 return_str = evaluator.print_stats()
                 self.logger.info(return_str)
+                import re
+                acc25 = float(re.search(r"Acc@0\.25\s*=\s*([0-9.]+)", return_str).group(1))*100
+                acc50 = float(re.search(r"Acc@0\.5\s*=\s*([0-9.]+)", return_str).group(1))*100
+                if acc25 > self.acc25:
+                    self.acc25 = acc25
+                    self.acc50 = acc50
+
+                print(self.acc25, self.acc50)
+
 
         # Record accuracy in tensorboard
         if self.tb_writer is not None:
@@ -180,7 +191,7 @@ class TrainTester(BaseTrainTester):
             save_json = os.path.join(save_path, "prediction.json")
             with open(save_json, "w") as f:
                 json.dump(pred, f, indent=4)
-        print("\033[92mSaved predictions at", self.log_dir, "\033[0m")
+        print("\033[92mSaved predictions at", self.log_dir, dist.get_rank(), "\033[0m")
 
         return None
 
@@ -281,14 +292,16 @@ class TrainTester(BaseTrainTester):
 if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     opt = parse_option()
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))  
-    print(f"\n\nlocal_rank: {local_rank}")
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
     torch.cuda.set_device(local_rank)
     torch.distributed.init_process_group(backend="nccl", init_method="env://")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.deterministic = True
 
+    # torch.backends.cudnn.deterministic = True
+    # torch.use_deterministic_algorithms(True)
+    # set_seed(529, dist.get_rank())
+    
     train_tester = TrainTester(opt)
     ckpt_path = train_tester.main(opt)

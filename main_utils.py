@@ -31,6 +31,19 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 import ipdb
 
+import hashlib, torch
+
+def tensor_hash(t: torch.Tensor):
+    x = t.detach().float().contiguous().cpu().numpy().tobytes()
+    return hashlib.md5(x).hexdigest()
+
+def set_seed(seed: int =529, rank: int = 0):
+    seed = seed + rank   # ⭐ 关键：每个 rank 不同，但确定
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 def parse_option():
     """Parse cmd arguments."""
@@ -56,8 +69,8 @@ def parse_option():
     parser.add_argument("--batch_size", type=int, default=8, help="Batch Size during training")
     parser.add_argument("--dataset", type=str, default=["quad"], nargs="+", help="list of datasets to train on")
     parser.add_argument("--test_dataset", type=str, default=["sr3d"], nargs="+", )
-    parser.add_argument("--data_root", default="./", help="Root directory for datasets")
-    parser.add_argument("--split_dir", default="data/splits", help="Directory containing split files (train.txt, val.txt)")
+    parser.add_argument("--data_root", default="data/3eed", help="Root directory for datasets")
+    parser.add_argument("--split_dir", default="data/3eed/splits", help="Directory containing split files (train.txt, val.txt)")
     parser.add_argument("--use_height", action="store_true", help="Use height signal in input.")
     parser.add_argument("--use_color", action="store_true", help="Use RGB color in input.")
     parser.add_argument("--use_multiview", action="store_true")
@@ -99,7 +112,7 @@ def parse_option():
     # others
     parser.add_argument("--local_rank", type=int, help="local rank for DistributedDataParallel")
     parser.add_argument("--ap_iou_thresholds", type=float, default=[0.25, 0.5], nargs="+", help="A list of AP IoU thresholds")
-    parser.add_argument("--rng_seed", type=int, default=0, help="manual seed")
+    parser.add_argument("--rng_seed", type=int, default=529, help="manual seed")
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -123,18 +136,18 @@ def parse_option():
         
         test_datasets = "_".join(args.test_dataset)
         exp_name = f"Val_{test_datasets}"
-        args.log_dir = os.path.join(checkpoint_dir, "eval", exp_name, time.strftime('%m%d_%H%M'))
+        args.log_dir = os.path.join(checkpoint_dir, "eval", exp_name, time.strftime('%Y%m%d_%H%M%S'))
     else:
         # For training: use Train_<datasets>_Val_<test_datasets> format
         train_datasets = "_".join(args.dataset)
         test_datasets = "_".join(args.test_dataset)
-        exp_name = f"Train_{train_datasets}_Val_{test_datasets}"
-        
-        if args.flag is not None:
-            exp_name = f"{exp_name}/{args.flag}"
+        if args.flag is None:
+            exp_name = f"Train_{train_datasets}_Val_{test_datasets}"
         else:
-            exp_name = f"{exp_name}/{time.strftime('%m%d_%H%M')}"
-        
+            exp_name = f"Train_{train_datasets}_Val_{test_datasets}_{args.flag}"
+
+        exp_name = f"{exp_name}/{time.strftime('%Y%m%d_%H%M%S')}"
+
         args.log_dir = os.path.join(args.log_dir, exp_name)
     
     # Add debug suffix if needed
@@ -246,6 +259,10 @@ class BaseTrainTester:
             self.logger.info(f"TensorBoard logs at {tb_logdir}")
         else:
             self.tb_writer = None
+        # Metrics
+        self.acc25 = 0.0
+        self.acc50 = 0.0
+        self.miou = 0.0
 
     @staticmethod
     def get_datasets(args):
@@ -282,19 +299,20 @@ class BaseTrainTester:
             worker_seed = torch.initial_seed() % 2**32
             np.random.seed(worker_seed)
             random.seed(worker_seed)
-            np.random.seed(np.random.get_state()[1][0] + worker_id)
+            # np.random.seed(np.random.get_state()[1][0] + worker_id)
+            # pass
 
         # Datasets
         train_dataset, test_dataset = self.get_datasets(args)
         # Samplers and loaders
         g = torch.Generator()
-        g.manual_seed(0)
+        g.manual_seed(args.rng_seed)
         
         # Only create train_loader if not in eval mode
         if args.eval or train_dataset is None:
             train_loader = None
         else:
-            train_sampler = DistributedSampler(train_dataset)
+            train_sampler = DistributedSampler(train_dataset, shuffle=True, seed=args.rng_seed)
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=args.batch_size,
@@ -351,6 +369,7 @@ class BaseTrainTester:
 
     def main(self, args):
         """Run main training/testing pipeline."""
+        # dist.barrier()
         # Get loaders
         train_loader, test_loader = self.get_loaders(args)
         
@@ -384,6 +403,8 @@ class BaseTrainTester:
         # Move model to devices
         if torch.cuda.is_available():
             model = model.cuda()
+        # if args.syncbn:
+        #     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = DistributedDataParallel(model, device_ids=[args.local_rank], broadcast_buffers=False)  # , find_unused_parameters=True
 
         # Check for a checkpoint
@@ -414,11 +435,20 @@ class BaseTrainTester:
                 self.evaluate_one_epoch(epoch, test_loader, model, criterion, set_criterion, args)
 
         # Training is over, evaluate
-        save_checkpoint(args, "last", model, optimizer, scheduler, True)
-        saved_path = os.path.join(args.log_dir, "ckpt_epoch_last.pth")
-        self.logger.info("Saved in {}".format(saved_path))
-        self.evaluate_one_epoch(args.max_epoch, test_loader, model, criterion, set_criterion, args)
-        return saved_path
+        # save_checkpoint(args, "last", model, optimizer, scheduler, True)
+        # saved_path = os.path.join(args.log_dir, "ckpt_epoch_last.pth")
+        # self.logger.info("Saved in {}".format(saved_path))
+        # self.evaluate_one_epoch(args.max_epoch, test_loader, model, criterion, set_criterion, args)
+
+        time.sleep(5)
+
+        # rename save dir with acc
+        if dist.get_rank() == 0:
+            new_dir = args.log_dir + "_{:.2f}_{:.2f}".format(self.acc25, self.acc50)
+            os.rename(args.log_dir, new_dir)
+            print("\033[91mRenamed log dir to {}\033[0m".format(new_dir))
+            args.log_dir = new_dir
+        return None
 
     @staticmethod
     def _to_gpu(data_dict):
@@ -479,6 +509,7 @@ class BaseTrainTester:
                 assert key not in end_points
                 end_points[key] = batch_data[key]
             loss, end_points = self._compute_loss(end_points, criterion, set_criterion, args)
+            # print("loss:", loss.item())
             optimizer.zero_grad()
             loss.backward()
             if args.clip_norm > 0:
@@ -513,7 +544,6 @@ class BaseTrainTester:
                 # Reset statistics
                 for key in sorted(stat_dict.keys()):
                     stat_dict[key] = 0
-
     @torch.no_grad()
     def _main_eval_branch(self, epoch, batch_idx, batch_data, test_loader, model, stat_dict, criterion, set_criterion, args):
         # Move to GPU

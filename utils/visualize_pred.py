@@ -314,7 +314,7 @@ def visualize_from_prediction(
     lidar_filename = "lidar.npy" if dataset == "waymo" else "lidar.bin"
     lidar_path = os.path.join(
         base_dir,
-        "data/3eed_merge",
+        "data/3eed",
         dataset,
         sequence,
         frame_id,
@@ -473,7 +473,7 @@ if __name__ == "__main__":
 
     sample_and_visualize_predictions(
         base_dir=".",
-        prediction_subdir="3eed_logs/Train_quad_drone_waymo_Val_quad_drone_waymo/wo_saf/predictions",
+        prediction_subdir="/media/vision/lzy/image_zyl/3EED/baseline_ckpt_pred/final_6384/predictions",
         output_dir="vis_results/drone",
         num_samples=5,
         seed=42  # For reproducibility

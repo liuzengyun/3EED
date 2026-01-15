@@ -69,7 +69,7 @@ class BeaUTyDETR(nn.Module):
         # if input_feature_dim == 3 and pointnet_ckpt is not None:
             # self.backbone_net.load_state_dict(torch.load(pointnet_ckpt), strict=False)
         # cfg = get_cfg()
-        self.backbone_net = Point_Backbone_V2(model_cfg=get_cfg().BACKBONE_3D, num_class=num_class, input_channels=3)
+        self.backbone_net = Point_Backbone_V2(model_cfg=get_cfg().BACKBONE_3D, num_class=num_class, input_channels=input_feature_dim)
 
         # Text Encoder
         t_type = "./data/roberta_base/"

@@ -165,7 +165,7 @@ class Joint3DDataset(Dataset):
         """Get all relevant file paths for a frame."""
         return {
             "image": os.path.join(frame_path, "image.jpg"),
-            "lidar": os.path.join(frame_path, "lidar.npy" if dataset == "waymo" else "lidar.bin"),
+            "lidar": os.path.join(frame_path, "lidar.npy" if dataset == "waymo" else ("lidar_rgb.bin" if self.use_color else "lidar.bin")), # waymo uses .npy, drone/quad use .bin
             "meta": os.path.join(frame_path, "meta_info.json"),
         }
 
@@ -401,7 +401,13 @@ class Joint3DDataset(Dataset):
     def _get_3eed_pcd(self, anno):
         """Process point cloud data."""
         pcd_path = anno["pcd_path"]
-        pcd = np.fromfile(pcd_path, dtype=np.float32).reshape(-1, 4) if pcd_path.endswith(".bin") else np.load(pcd_path)
+        if pcd_path.endswith("lidar.bin"):
+            pcd = np.fromfile(pcd_path, dtype=np.float32).reshape(-1, 4)
+        elif pcd_path.endswith("lidar_rgb.bin"):
+            pcd = np.fromfile(pcd_path, dtype=np.float32).reshape(-1, 7)
+        else:
+            pcd = np.load(pcd_path)
+
 
         N = pcd.shape[0]
         TARGET_NUM_POINTS = 16384 # 13,321
@@ -413,8 +419,10 @@ class Joint3DDataset(Dataset):
 
         pcd = pcd[indices]  # shape: (50000, 5)
         xyz = pcd[:, 0:3]
-
         reflectance = pcd[:, 3].reshape(-1, 1)  # shape: (n,)
+        if self.use_color:
+            rgb = pcd[:, 4:7] / 255.0  # shape: (n, 3), from [0, 255] to [0, 1]
+            rgb = rgb - 0.5  # self.mean_rgb  # from [0, 1] to [-1, 1]
 
         if anno["dataset"] == "waymo":
             # reflectance_3d = np.tanh(np.concatenate([pcd[:, 3:5], pcd[:, 3].reshape(-1, 1)], axis=1))  # (n_p, 3)
@@ -429,7 +437,8 @@ class Joint3DDataset(Dataset):
             xyz[:, 2] += 1.8  # NOTE drone dataset's z coordinate is lower
      
         reflectance = reflectance - 0.5  # self.mean_rgb[0] # from [0, 1] to [-1, 1]
-        point_cloud = np.concatenate([xyz, reflectance], axis=1)
+        if self.use_color:
+            return np.concatenate([xyz, rgb], axis=1)  # point_cloud n*6
 
         return xyz  # point_cloud
 

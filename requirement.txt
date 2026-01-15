@@ -1,0 +1,10 @@
+tqdm
+ipdb
+numpy
+transformers
+scipy
+easydict
+open3d
+opencv-python
+termcolor
+tensorboard

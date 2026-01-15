@@ -262,6 +262,7 @@ class GroundingEvaluator:
                 pbox       # (10, 6) - axis-aligned pred bboxes
             )  # returns (1, 10) - IoU between 1 GT and 10 predictions
             # Since num_obj==1 (single target), ious shape is already correct
+            # print("ious:", ious)
 
             # 4.5 Record predictions (for later analysis)
             meta_path = batch_data["meta_path"][bid]
