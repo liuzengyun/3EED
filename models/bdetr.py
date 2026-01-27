@@ -51,6 +51,7 @@ class BeaUTyDETR(nn.Module):
         contrastive_align_loss=True,
         d_model=288,
         butd=True,
+        heading=False,
         pointnet_ckpt=None,
         self_attend=True,
     ):
@@ -62,6 +63,7 @@ class BeaUTyDETR(nn.Module):
         self.self_position_embedding = self_position_embedding
         self.contrastive_align_loss = contrastive_align_loss
         self.butd = butd
+        self.heading = heading
 
         # Visual encoder
         # ipdb.set_trace()
@@ -102,19 +104,24 @@ class BeaUTyDETR(nn.Module):
         self.decoder_query_proj = nn.Conv1d(d_model, d_model, kernel_size=1)
 
         # Proposal (layer for size and center)
-        self.proposal_head = ClsAgnosticPredictHead(num_class, 1, num_queries, d_model, objectness=False, heading=False, compute_sem_scores=True)
-
+        if self.heading:
+            self.proposal_head = ClsAgnosticPredictHead(num_class, 12, num_queries, d_model, objectness=False, heading=True, compute_sem_scores=True)
+        else:
+            self.proposal_head = ClsAgnosticPredictHead(num_class, 1, num_queries, d_model, objectness=False, heading=False, compute_sem_scores=True)
         # Transformer decoder layers
         self.decoder = nn.ModuleList()
         for _ in range(self.num_decoder_layers):
             self.decoder.append(
-                BiDecoderLayer(d_model, n_heads=8, dim_feedforward=256, dropout=0.1, activation="relu", self_position_embedding=self_position_embedding, butd=self.butd)
+                BiDecoderLayer(d_model, n_heads=8, dim_feedforward=256, dropout=0.1, activation="relu", self_position_embedding=self_position_embedding, butd=self.butd, heading=self.heading)
             )
 
         # Prediction heads
         self.prediction_heads = nn.ModuleList()
         for _ in range(self.num_decoder_layers):
-            self.prediction_heads.append(ClsAgnosticPredictHead(num_class, 1, num_queries, d_model, objectness=False, heading=False, compute_sem_scores=True))
+            if self.heading:
+                self.prediction_heads.append(ClsAgnosticPredictHead(num_class, 12, num_queries, d_model, objectness=False, heading=True, compute_sem_scores=True))
+            else:
+                self.prediction_heads.append(ClsAgnosticPredictHead(num_class, 1, num_queries, d_model, objectness=False, heading=False, compute_sem_scores=True))
 
         # Extra layers for contrastive losses
         if contrastive_align_loss:
@@ -202,14 +209,14 @@ class BeaUTyDETR(nn.Module):
             detected_mask=detected_mask,
         )
         points_features = points_features.transpose(1, 2)
-        points_features = points_features.contiguous()  # (B, F, points)
+        points_features = points_features.contiguous()  # (B, F=288, points=1024)
         end_points["text_memory"] = text_feats
         end_points["seed_features"] = points_features
         if self.contrastive_align_loss:
             proj_tokens = F.normalize(self.contrastive_align_projection_text(text_feats), p=2, dim=-1)
             end_points["proj_tokens"] = proj_tokens  # MARK used to compute contrastive loss
 
-        # Query Points Generation
+        # Query Points Generation 从1024个点中选256个作为query points
         end_points = self._generate_queries(points_xyz, points_features, end_points)
         cluster_feature = end_points["query_points_feature"]  # (B, F, V)
         cluster_xyz = end_points["query_points_xyz"]  # (B, V, 3)
@@ -219,9 +226,16 @@ class BeaUTyDETR(nn.Module):
             end_points["proposal_proj_queries"] = F.normalize(self.contrastive_align_projection_image(query), p=2, dim=-1)
 
         # Proposals (one for each query)
-        proposal_center, proposal_size = self.proposal_head(cluster_feature, base_xyz=cluster_xyz, end_points=end_points, prefix="proposal_")  # TODO read code
+        if self.heading:
+            proposal_center, proposal_size, heading_angle = self.proposal_head(cluster_feature, base_xyz=cluster_xyz, end_points=end_points, prefix="proposal_")  # TODO read code
+            base_heading_sin = torch.sin(heading_angle).detach().clone()  # (B, V)
+            base_heading_cos = torch.cos(heading_angle).detach().clone()  # (B, V)
+            base_heading = torch.stack([base_heading_sin, base_heading_cos], -1)  # (B, V, 2)
+        else:
+            proposal_center, proposal_size = self.proposal_head(cluster_feature, base_xyz=cluster_xyz, end_points=end_points, prefix="proposal_")  # TODO read code
         base_xyz = proposal_center.detach().clone()  # (B, V, 3)
         base_size = proposal_size.detach().clone()  # (B, V, 3)
+        
         query_mask = None
 
         # Decoder
@@ -233,6 +247,8 @@ class BeaUTyDETR(nn.Module):
                 query_pos = None
             elif self.self_position_embedding == "xyz_learned":
                 query_pos = base_xyz
+            elif self.self_position_embedding == "loc_learned" and self.heading:
+                query_pos = torch.cat([base_xyz, base_size, base_heading], -1)
             elif self.self_position_embedding == "loc_learned":
                 query_pos = torch.cat([base_xyz, base_size], -1)
             else:
@@ -254,9 +270,15 @@ class BeaUTyDETR(nn.Module):
                 end_points[f"{prefix}proj_queries"] = F.normalize(self.contrastive_align_projection_image(query), p=2, dim=-1)  # MARK used to compute contrastive loss
 
             # Prediction
-            base_xyz, base_size = self.prediction_heads[i](query.transpose(1, 2).contiguous(), base_xyz=cluster_xyz, end_points=end_points, prefix=prefix)  # (B, F, V)
-            base_xyz = base_xyz.detach().clone()
-            base_size = base_size.detach().clone()
+            if self.heading:
+                base_xyz, base_size, heading_angle = self.prediction_heads[i](query.transpose(1, 2).contiguous(), base_xyz=base_xyz, end_points=end_points, prefix=prefix)  # (B, F, V)
+                base_heading_sin = torch.sin(heading_angle).detach().clone()  # (B, V)
+                base_heading_cos = torch.cos(heading_angle).detach().clone()  # (B, V)
+                base_heading = torch.stack([base_heading_sin, base_heading_cos], -1)  # (B, V, 2)
+            else:
+                base_xyz, base_size = self.prediction_heads[i](query.transpose(1, 2).contiguous(), base_xyz=base_xyz, end_points=end_points, prefix=prefix)  # (B, F, V)
+            # base_xyz = base_xyz.detach().clone()
+            # base_size = base_size.detach().clone()
 
         return end_points
 

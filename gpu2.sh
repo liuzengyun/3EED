@@ -11,5 +11,6 @@ TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.
     --lr_decay_epochs 25 45 \
     --use_soft_token_loss --use_contrastive_align \
     --log_dir logs \
-    --self_attend
+    --self_attend \
+    --heading
     

@@ -289,7 +289,7 @@ class BiDecoderLayer(nn.Module):
 
     def __init__(self, d_model, n_heads, dim_feedforward=2048, dropout=0.1,
                  activation="relu",
-                 self_position_embedding='loc_learned', butd=False):
+                 self_position_embedding='loc_learned', butd=False, heading=False):
         """Initialize layers, d_model is the encoder dimension."""
         super().__init__()
 
@@ -307,6 +307,7 @@ class BiDecoderLayer(nn.Module):
         )
         self.dropout_l = nn.Dropout(dropout)
         self.norm_l = nn.LayerNorm(d_model)
+        self.heading = heading
 
         if butd:
             # Cross attention in detected boxes
@@ -332,6 +333,8 @@ class BiDecoderLayer(nn.Module):
         # Positional embeddings
         if self_position_embedding == 'xyz_learned':
             self.self_posembed = PositionEmbeddingLearned(3, d_model)
+        elif self_position_embedding == 'loc_learned' and heading:
+            self.self_posembed = PositionEmbeddingLearned(8, d_model)
         elif self_position_embedding == 'loc_learned':
             self.self_posembed = PositionEmbeddingLearned(6, d_model)
         else:

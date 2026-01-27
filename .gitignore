@@ -189,3 +189,7 @@ data/3eed
 butd_logs
 .vscode
 baseline_ckpt_pred/
+ops/
+data/
+pointnet2/
+vis_results/

@@ -711,6 +711,20 @@ class Joint3DDataset(Dataset):
         # Point cloud representation
         point_cloud = self._get_3eed_pcd(anno)
         gt_bboxes, box_label_mask, point_instance_label = self._get_3eed_target_boxes(anno, point_cloud)
+
+        # 预测yaw
+        NUM_HEADING_BIN = 12
+
+        gt_heading_class = np.zeros(MAX_NUM_OBJ, dtype=np.int64)
+        gt_heading_residual = np.zeros(MAX_NUM_OBJ, dtype=np.float32)
+
+        # 只对 valid box 计算 yaw（你这里只有一个 target）
+        for i in range(int(box_label_mask.sum())):
+            yaw = gt_bboxes[i, 6]  # radian
+            cls, res = angle2class(yaw, NUM_HEADING_BIN)
+            gt_heading_class[i] = cls
+            gt_heading_residual[i] = res
+
         
         # ipdb.set_trace()
         
@@ -743,6 +757,8 @@ class Joint3DDataset(Dataset):
             "is_view_dep": self._is_view_dep(anno["utterance"]),
             "is_hard": False,
             "is_unique": False,
+            "heading_class_label": gt_heading_class,
+            "heading_residual_label": gt_heading_residual,
         }
 
         return ret_dict
@@ -857,3 +873,17 @@ def box2points(box):
         ),
         axis=1,
     )
+
+def angle2class(angle, num_bin):
+    """
+    angle: radian, [-pi, pi)
+    return:
+        class_id: int
+        residual: float
+    """
+    angle = angle % (2 * np.pi)
+    angle_per_bin = 2 * np.pi / num_bin
+    shifted_angle = (angle + angle_per_bin / 2) % (2 * np.pi)
+    class_id = int(shifted_angle / angle_per_bin)
+    residual = shifted_angle - (class_id * angle_per_bin + angle_per_bin / 2)
+    return class_id, residual

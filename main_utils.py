@@ -64,6 +64,7 @@ def parse_option():
     parser.add_argument("--use_soft_token_loss", action="store_true")
     parser.add_argument("--detect_intermediate", action="store_true")
     parser.add_argument("--joint_det", action="store_true")
+    parser.add_argument("--heading", action="store_true")
 
     # Data
     parser.add_argument("--batch_size", type=int, default=8, help="Batch Size during training")

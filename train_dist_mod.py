@@ -101,6 +101,7 @@ class TrainTester(BaseTrainTester):
             contrastive_align_loss=args.use_contrastive_align,
             butd=args.butd or args.butd_gt or args.butd_cls,
             pointnet_ckpt=args.pp_checkpoint,
+            heading=args.heading,
             self_attend=args.self_attend,
         )
         return model

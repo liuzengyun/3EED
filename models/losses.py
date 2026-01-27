@@ -545,17 +545,18 @@ class SetCriterion(nn.Module):
 
 def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
                            query_points_obj_topk=5):
-    """Compute Hungarian matching loss containing CE, bbox and giou."""
-    prefixes = ['last_'] + [f'{i}head_' for i in range(num_decoder_layers - 1)]
-    prefixes = ['proposal_'] + prefixes
+    """Compute Hungarian matching loss including CE, bbox, giou, contrastive and yaw (heading) losses."""
+
+    prefixes = ['proposal_'] + ['last_'] + [f'{i}head_' for i in range(num_decoder_layers - 1)]
 
     # Ground-truth
     gt_center = end_points['center_label'][:, :, 0:3]  # B, G, 3
-    gt_size = end_points['size_gts']  # (B,G,3)
-    gt_labels = end_points['sem_cls_label']  # (B, G)
-    gt_bbox = torch.cat([gt_center, gt_size], dim=-1)  # cxcyczwhd
-    positive_map = end_points['positive_map']
-    box_label_mask = end_points['box_label_mask']
+    gt_size = end_points['size_gts']  # B, G, 3
+    gt_labels = end_points['sem_cls_label']  # B, G
+    gt_bbox = torch.cat([gt_center, gt_size], dim=-1)  # B, G, 6
+    positive_map = end_points['positive_map']           # B, G, 256
+    box_label_mask = end_points['box_label_mask']       # B, G
+
     target = [
         {
             "labels": gt_labels[b, box_label_mask[b].bool()],
@@ -565,40 +566,77 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         for b in range(gt_labels.shape[0])
     ]
 
+    # Initialize loss accumulators
     loss_ce, loss_bbox, loss_giou, loss_contrastive_align = 0, 0, 0, 0
+    loss_heading_class, loss_heading_residual = 0, 0
+
     for prefix in prefixes:
         output = {}
+
+        # Contrastive features
         if 'proj_tokens' in end_points:
             output['proj_tokens'] = end_points['proj_tokens']
             output['proj_queries'] = end_points[f'{prefix}proj_queries']
             output['tokenized'] = end_points['tokenized']
 
-        # Get predicted boxes and labels
-        pred_center = end_points[f'{prefix}center']  # B, K, 3
-        pred_size = end_points[f'{prefix}pred_size']  # (B,K,3) (l,w,h)
-        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
-        pred_logits = end_points[f'{prefix}sem_cls_scores']  # (B, Q, n_class)
-        output['pred_logits'] = pred_logits
-        output["pred_boxes"] = pred_bbox
+        # Predicted boxes and labels
+        pred_center = end_points[f'{prefix}center']       # B, K, 3
+        pred_size = end_points[f'{prefix}pred_size']      # B, K, 3
+        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # B, K, 6
+        pred_logits = end_points[f'{prefix}sem_cls_scores']       # B, K, num_class
 
-        # Compute all the requested losses
-        losses, _ = set_criterion(output, target)
+        output['pred_logits'] = pred_logits
+        output['pred_boxes'] = pred_bbox
+
+        # Hungarian matching losses (CE, bbox, giou, contrastive)
+        losses, indices = set_criterion(output, target)
         for loss_key in losses.keys():
             end_points[f'{prefix}_{loss_key}'] = losses[loss_key]
         loss_ce += losses.get('loss_ce', 0)
-        loss_bbox += losses['loss_bbox']
+        loss_bbox += losses.get('loss_bbox', 0)
         loss_giou += losses.get('loss_giou', 0)
         if 'proj_tokens' in end_points:
-            loss_contrastive_align += losses['loss_contrastive_align']
+            loss_contrastive_align += losses.get('loss_contrastive_align', 0)
 
-    if 'seeds_obj_cls_logits' in end_points.keys():
-        query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(
-            end_points, query_points_obj_topk
-        )
+        # -------------------------
+        # Yaw (heading) loss
+        # -------------------------
+        if f'{prefix}heading_scores' in end_points:
+            pred_heading_class = end_points[f'{prefix}heading_scores']      # B, K, num_heading_bin
+            pred_heading_res = end_points[f'{prefix}heading_residuals']     # B, K, num_heading_bin
+
+            gt_heading_class = end_points['heading_class_label']
+            gt_heading_res = end_points['heading_residual_label']
+
+            batch_loss_hc, batch_loss_hr = 0.0, 0.0
+
+            for b, (pred_idx, tgt_idx) in enumerate(indices):
+                # matched predictions and corresponding GT
+                matched_pred_cls = pred_heading_class[b][pred_idx]  # [num_match, num_bin]
+                matched_pred_res = pred_heading_res[b][pred_idx]    # [num_match, num_bin]
+                matched_gt_cls = gt_heading_class[b][tgt_idx]       # [num_match]
+                matched_gt_res = gt_heading_res[b][tgt_idx]         # [num_match]
+
+                # heading class loss
+                batch_loss_hc += F.cross_entropy(matched_pred_cls, matched_gt_cls)
+
+                # gather residual using matched class
+                pred_hr_gathered = torch.gather(
+                    matched_pred_res, 1, matched_gt_cls.unsqueeze(1)
+                ).squeeze(1)  # [num_match]
+                batch_loss_hr += F.smooth_l1_loss(pred_hr_gathered, matched_gt_res)
+
+            if len(indices) > 0:
+                loss_heading_class += batch_loss_hc / len(indices)
+                loss_heading_residual += batch_loss_hr / len(indices)
+
+    # Query points generation loss
+    if 'seeds_obj_cls_logits' in end_points:
+        query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(end_points, query_points_obj_topk)
     else:
         query_points_generation_loss = 0.0
 
-    # loss
+    # Total loss
     loss = (
         8 * query_points_generation_loss
         + 1.0 / (num_decoder_layers + 1) * (
@@ -606,12 +644,19 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             + 5 * loss_bbox
             + loss_giou
             + loss_contrastive_align
+            + loss_heading_class
+            + loss_heading_residual
         )
     )
+
+    # Save to end_points
     end_points['loss_ce'] = loss_ce
     end_points['loss_bbox'] = loss_bbox
     end_points['loss_giou'] = loss_giou
     end_points['query_points_generation_loss'] = query_points_generation_loss
-    end_points['loss_constrastive_align'] = loss_contrastive_align
+    end_points['loss_contrastive_align'] = loss_contrastive_align
+    end_points['loss_heading_class'] = loss_heading_class
+    end_points['loss_heading_residual'] = loss_heading_residual
     end_points['loss'] = loss
+
     return loss, end_points

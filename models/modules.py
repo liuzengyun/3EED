@@ -12,6 +12,7 @@
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
 
 from pointnet2.pointnet2_utils import gather_operation
 
@@ -156,6 +157,14 @@ class ClsAgnosticPredictHead(nn.Module):
             end_points[f"{prefix}heading_scores"] = heading_scores
             end_points[f"{prefix}heading_residuals_normalized"] = heading_residuals_normalized
             end_points[f"{prefix}heading_residuals"] = heading_residuals
+            # ---------- 解码 heading 角度 ----------
+            heading_class = torch.argmax(heading_scores, dim=-1)  # (B, Q)
+            heading_res = torch.gather(heading_residuals, 2, heading_class.unsqueeze(-1)).squeeze(-1)  # (B, Q)
+            angle_per_class = 2 * np.pi / self.num_heading_bin
+            heading_angle = heading_class.float() * angle_per_class + heading_res - np.pi
+
+            # 保存最终 yaw 预测，evaluator 需要的 key
+            end_points[f"{prefix}heading"] = heading_angle  # (B, Q)
 
         # size
         pred_size = self.size_pred_head(net).transpose(2, 1).view([batch_size, num_proposal, 3])  # (batch_size, num_proposal, 3)
@@ -170,4 +179,7 @@ class ClsAgnosticPredictHead(nn.Module):
 
         if self.compute_sem_scores:
             end_points[f"{prefix}sem_cls_scores"] = sem_cls_scores  # TODO: understand what this means
-        return center, pred_size
+        if self.heading:
+            return center, pred_size, heading_angle
+        else:
+            return center, pred_size

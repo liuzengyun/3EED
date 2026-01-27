@@ -1,4 +1,4 @@
-TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=3 python -m torch.distributed.launch --nproc_per_node 1 --master_port $((RANDOM % 30000 + 20020)) \
+TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nproc_per_node 1 --master_port $((RANDOM % 30000 + 20120)) \
     train_dist_mod.py \
     --val_freq 10 --batch_size 16 --save_freq 10 --print_freq 1000 \
     --max_epoch 100 \
@@ -8,6 +8,5 @@ TORCH_DISTRIBUTED_DEBUG=INFO CUDA_VISIBLE_DEVICES=3 python -m torch.distributed.
     --lr_decay_epochs 25 45 \
     --use_soft_token_loss --use_contrastive_align \
     --log_dir logs \
-    --self_attend \
-    --heading
+    --self_attend
     

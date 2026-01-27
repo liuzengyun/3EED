@@ -138,7 +138,17 @@ class GroundingEvaluator:
         pred_center = end_points[f"{prefix}center"]  # B, Q, 3
         pred_size = end_points[f"{prefix}pred_size"]  # (B,Q,3) (l,w,h)
         assert (pred_size < 0).sum() == 0
-        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # B, Q=256, 6, each query corresponds to a box
+        if hasattr(end_points, f"{prefix}heading"):
+            pred_heading = end_points[f"{prefix}heading"]    # (B, Q)
+            pred_bbox = torch.cat(
+                [pred_center, pred_size, pred_heading.unsqueeze(-1)],
+                dim=-1
+            )  # (B, Q, 7)
+        else:
+            pred_bbox = torch.cat(
+                [pred_center, pred_size],
+                dim=-1
+            )  # (B, Q, 6)
 
         # Highest scoring box -> iou
         for bid in range(len(positive_map)):
@@ -153,10 +163,17 @@ class GroundingEvaluator:
 
             # IoU - NOW USING ROTATED GT FOR FAIR COMPARISON
             gt_boxes = gt_bboxes_rotated[bid][:num_obj]  # (1, 7) or (1, 9) - with rotation
-            ious, _ = iou3d_rotated_vs_aligned(
-                gt_boxes,  # (1, 7/9) - rotated GT bbox
-                pbox       # (10, 6) - axis-aligned pred bboxes
-            )  # returns (1, 10) - IoU between 1 gt and 10 predictions
+            if pred_bbox.shape[-1] == 6:
+                # Axis-aligned pred vs rotated gt
+                ious, _ = iou3d_rotated_vs_aligned(
+                    gt_boxes,  # (1, 7/9) - rotated GT bbox
+                    pbox       # (10, 6) - axis-aligned pred bboxes
+                )  # returns (1, 10) - IoU between 1 gt and 10 predictions
+            else:
+                ious, _ = _iou3d_par(
+                    gt_boxes,  # (1, 7/9) - rotated GT bbox
+                    pbox       # (10, 7) - rotated pred bboxes with heading
+                )  # returns (1, 10) - IoU between 1 gt and 10 predictions
 
             # Measure IoU>threshold, ious are (obj, 10)
             topks = self.topks  # [1, 5, 10]
@@ -199,7 +216,17 @@ class GroundingEvaluator:
         pred_center = end_points[f"{prefix}center"]  # (B=8, Q=256, 3) - predicted centers
         pred_size = end_points[f"{prefix}pred_size"]  # (B=8, Q=256, 3) - predicted sizes (l,w,h)
         assert (pred_size < 0).sum() == 0  # ensure sizes are positive
-        pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # (B=8, Q=256, 6)
+        if hasattr(end_points, f"{prefix}heading"):
+            pred_heading = end_points[f"{prefix}heading"]    # (B, Q)
+            pred_bbox = torch.cat(
+                [pred_center, pred_size, pred_heading.unsqueeze(-1)],
+                dim=-1
+            )  # (B, Q, 7)
+        else:
+            pred_bbox = torch.cat(
+                [pred_center, pred_size],
+                dim=-1
+            )  # (B, Q, 6)
         # DETR: each sample predicts 256 candidate boxes (queries)
 
         # ============ 3. Compute contrastive scores ============
@@ -257,12 +284,17 @@ class GroundingEvaluator:
             
             # 4.4 Compute IoU (rotated GT vs axis-aligned pred)
             gt_boxes = gt_bboxes_rotated[bid][:num_obj]  # (1, 7) or (1, 9) - with rotation
-            ious, _ = iou3d_rotated_vs_aligned(
-                gt_boxes,  # (1, 7/9) - rotated GT bbox
-                pbox       # (10, 6) - axis-aligned pred bboxes
-            )  # returns (1, 10) - IoU between 1 GT and 10 predictions
-            # Since num_obj==1 (single target), ious shape is already correct
-            # print("ious:", ious)
+            if pred_bbox.shape[-1] == 6:
+                # Axis-aligned pred vs rotated gt
+                ious, _ = iou3d_rotated_vs_aligned(
+                    gt_boxes,  # (1, 7/9) - rotated GT bbox
+                    pbox       # (10, 6) - axis-aligned pred bboxes
+                )  # returns (1, 10) - IoU between 1 gt and 10 predictions
+            else:
+                ious, _ = _iou3d_par(
+                    gt_boxes,  # (1, 7/9) - rotated GT bbox
+                    pbox       # (10, 7) - rotated pred bboxes with heading
+                )  # returns (1, 10) - IoU between 1 gt and 10 predictions
 
             # 4.5 Record predictions (for later analysis)
             meta_path = batch_data["meta_path"][bid]

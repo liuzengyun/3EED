@@ -890,3 +890,60 @@ def iou3d_rotated_vs_aligned(gt_bboxes_rotated, pred_bboxes_aligned):
     union = None
     
     return ious, union
+
+def iou3d_rotated_vs_rotated(gt_bboxes_rotated, pred_bboxes_rotated):
+    """
+    Rotated GT vs Rotated Pred 3D IoU (with heading)
+
+    Coordinate system:
+        X: forward/backward (length)
+        Y: left/right (width)
+        Z: up/down (height)
+    """
+
+    device = gt_bboxes_rotated.device
+
+    # ---------------------------------------------------
+    # 1. Convert boxes to corners (X, Y, Z)
+    # ---------------------------------------------------
+    gt_corners = bbox_7d9d_to_corners(gt_bboxes_rotated)     # (M, 8, 3)
+    pred_corners = bbox_7d9d_to_corners(pred_bboxes_rotated)  # (N, 8, 3)
+
+    # ---------------------------------------------------
+    # 2. Reorder axes for box3d_iou
+    #    box3d_iou expects Y as height axis
+    #    Our Z is height → swap Y and Z
+    # ---------------------------------------------------
+    gt_corners_reorder = torch.stack([
+        gt_corners[..., 0],  # X
+        gt_corners[..., 2],  # new Y = Z (height)
+        gt_corners[..., 1],  # new Z = Y
+    ], dim=-1)
+
+    pred_corners_reorder = torch.stack([
+        pred_corners[..., 0],  # X
+        pred_corners[..., 2],  # new Y = Z
+        pred_corners[..., 1],  # new Z = Y
+    ], dim=-1)
+
+    M = gt_corners_reorder.shape[0]
+    N = pred_corners_reorder.shape[0]
+
+    # ---------------------------------------------------
+    # 3. Compute IoU pairwise
+    # ---------------------------------------------------
+    ious = torch.zeros((M, N), device=device)
+
+    for i in range(M):
+        for j in range(N):
+            try:
+                iou3d, _ = box3d_iou(
+                    gt_corners_reorder[i].cpu().numpy(),
+                    pred_corners_reorder[j].cpu().numpy()
+                )
+                ious[i, j] = torch.tensor(iou3d).to(device)
+            except Exception:
+                ious[i, j] = torch.tensor(0.0).to(device)
+
+    union = None
+    return ious, union
